@@ -1,7 +1,7 @@
 import express from "express"
 import "dotenv/config"
 import { tavily } from "@tavily/core"
-import { error } from "console"
+import { streamText } from 'ai';
 
 const app = express()
 const port = process.env.PORT || 3000
