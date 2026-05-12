@@ -3,6 +3,7 @@ import "dotenv/config"
 import { tavily } from "@tavily/core"
 import { streamText } from 'ai';
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { PROMPT_TEMPLATE } from "./prompts";
 
 const app = express()
 app.use(express.json());
@@ -35,9 +36,14 @@ app.post('/preplexity_ask',async (req, res) => {
 
   const webResult = webSearch.results; // result from trively
 
+  const promt = PROMPT_TEMPLATE
+                .replace("{{WEB_SEARCH_RESULTS}}",JSON.stringify(webResult))
+                .replace("{{USER_QUERY}}",JSON.stringify(query));
+                
   const { textStream } = streamText({
       model: "google/gemini-2.5-flash",
-      prompt: 'Invent a new holiday and describe its traditions.',
+      prompt: query,
+      system:""
     });
 
     for await (const textPart of textStream) {
