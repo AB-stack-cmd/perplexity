@@ -16,7 +16,7 @@ export const SYSTEM_PROMT=`You are a context-grounded AI assistant.
         Output format:
         {
         "answer": "string",
-        "followup": "string"
+        "followUps": "string"
         }
 
         Example:
@@ -29,7 +29,7 @@ export const SYSTEM_PROMT=`You are a context-grounded AI assistant.
         Response:
         {
         "answer": "The API rate limit is 100 requests per minute.",
-        "followup": ""
+        "followUps": ""
         }`
 
 
