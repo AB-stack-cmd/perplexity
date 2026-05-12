@@ -1,12 +1,14 @@
 import express from "express"
 import "dotenv/config"
 import { tavily } from "@tavily/core"
-import { streamText } from 'ai';
+import { streamText  ,  Output} from 'ai';
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { PROMPT_TEMPLATE } from "./prompts";
+import { PROMPT_TEMPLATE , SYSTEM_PROMT} from "./prompts";
+import * as z from "zod";
 
 const app = express()
 app.use(express.json());
+
 const port = process.env.PORT || 3000
 console.log(port)
 
@@ -36,14 +38,17 @@ app.post('/preplexity_ask',async (req, res) => {
 
   const webResult = webSearch.results; // result from trively
 
-  const promt = PROMPT_TEMPLATE
+  const Prompt = PROMPT_TEMPLATE
                 .replace("{{WEB_SEARCH_RESULTS}}",JSON.stringify(webResult))
                 .replace("{{USER_QUERY}}",JSON.stringify(query));
-                
+
   const { textStream } = streamText({
       model: "google/gemini-2.5-flash",
-      prompt: query,
-      system:""
+      prompt: Prompt,
+      system: SYSTEM_PROMT,
+      output:Output.object({
+        schema:
+      })
     });
 
     for await (const textPart of textStream) {
@@ -51,16 +56,18 @@ app.post('/preplexity_ask',async (req, res) => {
     }
 
     const context = webSearch.results.map(r => r.content).join("\n\n");// result content form the web search 
+    
     const prompt = `You are a helpful assistant. Use the following search results to answer the user query: ${query}\n\nSearch Results:\n${context}`;
 
     const result = await model.generateContent(prompt);
-    const response = await result.response;
+    const response = result.response;
     const text = response.text();
 
     res.json({
       answer: text,
       sources: webSearch.results
     });
+
   } catch (error) {
     console.error(error);
      res.status(500).json({ error: "Internal Server Error" });
