@@ -7,6 +7,7 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
+    "dev": "node index.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
@@ -21,6 +22,8 @@
     "@types/node": "^25.6.2",
     "nodemon": "^3.1.14",
     "ts-node": "^10.9.2",
-    "typescript": "^6.0.3"
-  }
+    "typescript": "^6.0.3",
+    "@types/bun": "latest"
+  },
+  "private": true
 }

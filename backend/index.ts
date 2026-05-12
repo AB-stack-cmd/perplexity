@@ -66,6 +66,7 @@ app.post('/preplexity_ask',async (req, res) => {
     // Send url
     res.write(JSON.stringify(webResult.map(result => { url : result.url})))
 
+    
     res.end()
 
   } catch (error) {
