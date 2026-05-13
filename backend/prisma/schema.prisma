@@ -6,8 +6,28 @@
 generator client {
   provider = "prisma-client"
   output   = "../generated/prisma"
+  
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+
+model User{
+  id          String    @id   @default(uuid())
+  email       String
+  provider    AuthProvider   
+  name        String       
+}
+
+enum AuthProvider{
+  Github
+  Google
+}
+
+model Conversation{
+  id          String    @id   @default(uuid())
+  title       String?
+  slug        String
 }
