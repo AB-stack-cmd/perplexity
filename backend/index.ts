@@ -2,7 +2,7 @@ import express from "express"
 import "dotenv/config"
 import { tavily } from "@tavily/core"
 import { streamText  ,  Output} from 'ai';
-import { GoogleGenerativeAI } from "@google/generative-ai";
+
 import { PROMPT_TEMPLATE , SYSTEM_PROMT} from "./prompts";
 import * as z from "zod";
 import { url } from "inspector";
@@ -13,8 +13,6 @@ app.use(express.json());
 const port = process.env.PORT || 3000
 console.log(port)
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 const client = tavily({ apiKey:process.env.TAVILY_API_KEY });
 if(!client){
@@ -56,6 +54,9 @@ app.post('/preplexity_ask',async (req, res) => {
       })
     });
 
+    res.header("Cache-Control","no-cache");
+    res.header("Control-Type","text/event-stream");
+
     for await (const textPart of textStream) {
       process.stdout.write(textPart);
       res.write(textPart);
@@ -63,7 +64,8 @@ app.post('/preplexity_ask',async (req, res) => {
 
     const context = webSearch.results.map(r => r.content).join("\n\n");// result content form the web search 
 
-    // Send url
+    res.write("\n<SOURCE>\n")
+    // Send resourch url
     res.write(JSON.stringify(webResult.map(result => { url : result.url})))
 
     
