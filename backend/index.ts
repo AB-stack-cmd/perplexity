@@ -5,7 +5,7 @@ import { streamText  ,  Output} from 'ai';
 
 import { PROMPT_TEMPLATE , SYSTEM_PROMT} from "./prompts";
 import * as z from "zod";
-import { url } from "inspector";
+import prisma from "./db"
 
 const app = express()
 app.use(express.json());
