@@ -7,6 +7,8 @@ import { PROMPT_TEMPLATE , SYSTEM_PROMT} from "./prompts";
 import * as z from "zod";
 import prisma from "./db"
 
+
+
 const app = express()
 app.use(express.json());
 
