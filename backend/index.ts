@@ -78,6 +78,12 @@ app.post('/preplexity_ask',async (req, res) => {
 
 })
 
+
+app.post('/preplexity_ask',async (req, res)=>{
+  const { query } = req.body;
+
+})
+
 app.listen(port, () => {
   console.log(`Example app listening on port ${port}`)
 })
