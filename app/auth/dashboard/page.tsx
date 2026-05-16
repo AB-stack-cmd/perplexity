@@ -3,7 +3,7 @@
 import { createClient } from "../../lib/supabase/client"
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-
+import axios from "axios"
 const supabase = createClient()
 
 export default function Dashboard() {
@@ -19,14 +19,22 @@ export default function Dashboard() {
 
       try {
 
-        const { data, error } = await supabase.auth.getSession()
-
+        const { data :{session}, error } = await supabase.auth.getSession()
+        const jwt = session?.access_token
         if (error) throw error
 
-        setUser(data.session?.user ?? null)
-
-        console.log(data.session)
-
+        setUser(session?.user ?? null)
+        if(user){
+          const res =await  axios.get(`${process.env.BACKEND_URL}/conversation`,{
+            headers:{
+              Authorization:`Bearer ${jwt}`
+            }
+          })
+          if(!res){
+            console.log("No response")
+          }
+        }
+        
       } catch (error) {
 
         console.error("Error fetching user:", error)

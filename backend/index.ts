@@ -16,11 +16,15 @@ const port = process.env.PORT || 3000
 console.log(port)
 
 
+
 const client = tavily({ apiKey:process.env.TAVILY_API_KEY });
 if(!client){
   console.error(`Error : ${client}`)  
 }
 
+app.get("conversation" , async(req, res)=>{
+  
+})
 
 app.post('/preplexity_ask',async (req, res) => {
 
