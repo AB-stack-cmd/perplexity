@@ -3,18 +3,16 @@ import "dotenv/config"
 import { tavily } from "@tavily/core"
 import { streamText  ,  Output} from 'ai';
 
-import { PROMPT_TEMPLATE , SYSTEM_PROMT} from "./prompts";
+import { PROMPT_TEMPLATE , SYSTEM_PROMT} from "./prompts.ts";
 import * as z from "zod";
-import prisma from "./db"
-
+import prisma from "./db.ts"
+import Validation from "./middleware.ts";
 
 
 const app = express()
 app.use(express.json());
 
-const port = process.env.PORT || 3000
-console.log(port)
-
+const port = process.env.PORT 
 
 
 const client = tavily({ apiKey:process.env.TAVILY_API_KEY });
@@ -22,8 +20,10 @@ if(!client){
   console.error(`Error : ${client}`)  
 }
 
-app.get("conversation" , async(req, res)=>{
-  
+app.get("/conversation" ,Validation, async(req, res)=>{
+ res.json({
+  userId : req.userId
+ })
 })
 
 app.post('/preplexity_ask',async (req, res) => {
@@ -91,5 +91,5 @@ app.post('/preplexity_ask',async (req, res)=>{
 })
 
 app.listen(port, () => {
-  console.log(`Example app listening on port ${port}`)
+  console.log(`listening on port ${port}...`)
 })

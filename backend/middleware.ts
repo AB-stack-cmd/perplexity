@@ -1,23 +1,32 @@
 import type {Request , Response, NextFunction  } from "express";
-import { createSupabseClient } from "./lib/supabase/Client";
+import { createSupabseClient } from "./lib/supabase/Client.ts";
 
 const supebase = createSupabseClient()
 export default async function Validation(req : Request ,  res: Response , next : NextFunction){
     try{
-          const token =  req.headers.authorization ; 
+        const token =  req.headers.authorization ; 
+        if (!token || !token.startsWith("Bearer ")) {
+
+        return res.status(401).json({
+            success: false,
+            message: "No token provided"
+          })
+        }
+
 
     const data = await supebase.auth.getUser(token);
+        
     const userId = data.data?.user?.id
 
-    if(userId){
-        req.userId = userId
-        next()
-    }
+        if(userId){
+            req.userId = userId
+            next()
+        }
     }catch (error: any) {
 
     return res.status(500).json({
       success: false,
       message: error.message
-    })
-  
+        })
+    }
 }
