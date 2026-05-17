@@ -2,7 +2,7 @@ import express from "express"
 import "dotenv/config"
 import { tavily } from "@tavily/core"
 import { streamText  ,  Output} from 'ai';
-
+import cors from "cors"
 import { PROMPT_TEMPLATE , SYSTEM_PROMT} from "./prompts.ts";
 import * as z from "zod";
 import prisma from "./db.ts"
@@ -11,6 +11,14 @@ import Validation from "./middleware.ts";
 
 const app = express()
 app.use(express.json());
+app.use(
+  cors({
+    origin: "http://localhost:3000", // frontend URL
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
+  })
+);
 
 const port = process.env.PORT 
 
@@ -20,13 +28,17 @@ if(!client){
   console.error(`Error : ${client}`)  
 }
 
-app.get("/conversation" ,Validation, async(req, res)=>{
- res.json({
-  userId : req.userId
- })
-})
+app.get("/conversation", Validation, async (req, res) => {
 
-app.post('/preplexity_ask',async (req, res) => {
+  console.log(req.userId);
+
+  res.json({
+    success: true,
+    userId: req.userId,
+  });
+
+});
+app.post('/preplexity_ask',Validation,async (req, res) => {
 
   const { query } =  req.body.query;
 
@@ -85,10 +97,7 @@ app.post('/preplexity_ask',async (req, res) => {
 })
 
 
-app.post('/preplexity_ask',async (req, res)=>{
-  const { query } = req.body;
 
-})
 
 app.listen(port, () => {
   console.log(`listening on port ${port}...`)
