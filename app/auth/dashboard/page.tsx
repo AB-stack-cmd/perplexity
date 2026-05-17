@@ -38,6 +38,7 @@ export default function Dashboard() {
             {
               headers: {
                 Authorization: `Bearer ${jwt}`,
+            
               },
             }
           );
@@ -45,6 +46,7 @@ export default function Dashboard() {
           console.log("Response:", res.data);
         }
         setLoading(false)
+        console.log("send response")
       } catch (error) {
         console.error("Error fetching user:", error);
         setUser(null);
