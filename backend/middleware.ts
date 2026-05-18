@@ -39,7 +39,7 @@ export default async function Validation(req : Request ,  res: Response , next :
           console.log(`Req : ${req.body.user}`)
           
             console.log(`req.id : ${req.userId}`)
-            console.log(userId)
+            // console.log(userId)
 
             req.userId = userId
             try {

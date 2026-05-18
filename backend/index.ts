@@ -30,12 +30,19 @@ if(!client){
 
 app.get("/conversation", Validation, async (req, res) => {
 
-  console.log(req.userId);
+  try{
 
-  res.json({
+    const id  = await prisma.user.findFirst({select : {id :true }})
+    console.log(`Id from prima ${id}`)
+    console.log(req.userId);
+    console.log(`body :  ${req.body}`)
+    res.json({
     success: true,
     userId: req.userId,
   });
+  }catch(e){
+    console.log(`error : ${e}`)
+  }
 
 });
 app.post('/preplexity_ask',Validation,async (req, res) => {
