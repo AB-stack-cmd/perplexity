@@ -48,6 +48,37 @@ app.get("/conversation", Validation, async (req, res) => {
   }
 });
 
+app.post("/conversation/:conversation" , async(req,res)=>{
+  try{
+    const conversationId = req.params.conversationId;
+    if(!conversationId){
+      res.status(400).json({
+        messsage : "Invalid Id"
+      })
+    };
+
+    const conversation =  await prisma.conversation.findFirst({
+      where:{
+        id:conversationId,
+        userId:req.userId
+      },
+      include:{
+        messages:{orderBy:{createdAt:"asc"}}
+      }
+    });
+
+    res.json({conversation})
+    if(!conversation){
+      res.status(404).json({message : "Conversation not found"});
+      return;
+    }
+
+  }catch(error){
+    console.error("conversation schema error")
+
+  }
+})
+
 app.post('/preplexity_ask',Validation,async (req, res) => {
 
   const { query } =  req.body.query;
@@ -64,6 +95,13 @@ app.post('/preplexity_ask',Validation,async (req, res) => {
   });
 
   const webResult = webSearch.results; // result from trively
+
+  const conversation = await prisma.conversation.create({
+    data:{
+      id:req.userId,
+      title: query.slice()
+    }
+  })
 
   const Prompt = PROMPT_TEMPLATE
                 .replace("{{WEB_SEARCH_RESULTS}}",JSON.stringify(webResult))
