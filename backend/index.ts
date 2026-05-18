@@ -29,22 +29,25 @@ if(!client){
 }
 
 app.get("/conversation", Validation, async (req, res) => {
+  try {
 
-  try{
+    console.log("2 userId:", req.userId);
 
-    const id  = await prisma.user.findFirst({select : {id :true }})
-    console.log(`Id from prima ${id}`)
-    console.log(req.userId);
-    console.log(`body :  ${req.body}`)
-    res.json({
-    success: true,
-    userId: req.userId,
-  });
-  }catch(e){
-    console.log(`error : ${e}`)
+    return res.json({
+      success: true,
+      userId : req.userId
+    });
+
+  } catch (e) {
+    console.error("FULL ERROR:", e);
+
+    return res.status(500).json({
+      success: false,
+      error: e instanceof Error ? e.message : String(e),
+    });
   }
-
 });
+
 app.post('/preplexity_ask',Validation,async (req, res) => {
 
   const { query } =  req.body.query;

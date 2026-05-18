@@ -1,8 +1,6 @@
-import type {Request , Response, NextFunction  } from "express";
+import type { Request, Response, NextFunction } from "express";
 import { createSupabseClient } from "./lib/supabase/Client.ts";
-import prisma from "./db.ts"
-import { email } from "zod";
-
+import prisma from "./db.ts";
 
 declare global {
   namespace Express {
@@ -12,81 +10,88 @@ declare global {
   }
 }
 
-const supebase = createSupabseClient()
-export default async function Validation(req : Request ,  res: Response , next : NextFunction){
-    try{
-        const auth =  req.headers.authorization ; 
-        console.log(`auth: ${auth}`)
-        if (!auth || !auth.startsWith("Bearer ")) {
-        console.log(req.body)
+const supabase = createSupabseClient();
 
-        return res.status(401).json({
-            success: false,
-            message: "No token provided"
-          })
-        }
-          // Extract JWT only
+export default async function Validation(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    // Authorization header
+    const auth = req.headers.authorization;
+
+    console.log("AUTH HEADER:", auth);
+
+    // Validate header
+    if (!auth || !auth.startsWith("Bearer ")) {
+      return res.status(401).json({
+        success: false,
+        message: "No token provided",
+      });
+    }
+
+    // Extract token
     const token = auth.split(" ")[1];
 
-    // User data
-    const data = await supebase.auth.getUser(token);
-    console.log(data.data.user)
-    console.log(`Metadata : ${data.data.user?.app_metadata.provider}`)
-        
-    const userId = data.data?.user?.id
+    // Validate token with Supabase
+    const { data, error } = await supabase.auth.getUser(token);
 
-        if(userId){
-          console.log(`Req : ${req.body.user}`)
-          
-            console.log(`req.id : ${req.userId}`)
-            // console.log(userId)
+    // Invalid token
+    if (error || !data.user) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid token",
+      });
+    }
 
-            req.userId = userId
-            try {
+    const user = data.user;
 
-            const existingUser = await prisma.user.findUnique({
-              where: {
-                id:userId,
-                supabaseId: userId,
-              },
-            });
+    console.log("SUPABASE USER:", user);
 
-            if (!existingUser) {
+    // Attach userId to request
+    req.userId = user.id;
 
-              await prisma.user.create({
-                data: {
-                  email: data.data.user?.email || "",
+    // if user exists
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        supabaseId: user.id,
+      },
+    });
 
-                  provider:
-                    data.data.user?.app_metadata.provider === "google"
-                      ? "Google"
-                      : "Github",
+    //  user if not exists
+    if (!existingUser) {
+      await prisma.user.create({
+        data: {
+          email: user.email || "",
 
-                  name:
-                    data.data.user?.user_metadata.full_name ||
-                    data.data.user?.user_metadata.name ||
-                    "Unknown",
+          provider:
+            user.app_metadata.provider === "google"
+              ? "Google"
+              : "Github",
 
-                  supabaseId: userId,
-                },
-              });
+          name:
+            user.user_metadata.full_name ||
+            user.user_metadata.name ||
+            "Unknown",
 
-              console.log("User created");
-            } else {
-              console.log("User already exists");
-            }
+          supabaseId: user.id,
+        },
+      });
 
-          } catch (e) {
-            console.log(e);
-          }
-            
-           next()
-          }
-    }catch (error: any) {
+      console.log("User created");
+    } else {
+      console.log("User already exists");
+    }
+
+    next();
+
+  } catch (error: any) {
+    console.error("VALIDATION ERROR:", error);
 
     return res.status(500).json({
       success: false,
-      message: error.message
-        })
-    }
+      message: error.message || "Internal Server Error",
+    });
+  }
 }

@@ -45,10 +45,12 @@ export default function Dashboard() {
 
           console.log("Response:", res.data);
         }
-        setLoading(false)
+       
         console.log("send response")
+          setLoading(false)
       } catch (error) {
         console.error("Error fetching user:", error);
+       
         setUser(null);
       } 
     }
