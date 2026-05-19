@@ -82,7 +82,7 @@ app.post("/conversation/:conversation" , async(req,res)=>{
 
 app.post('/preplexity_ask',Validation,async (req, res) => {
 
-  const { query } =  req.body;
+  const { query } =  req.body.query;
 
   if(!query){
     return res.status(400).json({
@@ -150,12 +150,16 @@ app.post('/preplexity_ask',Validation,async (req, res) => {
     res.header("Cache-Control","no-cache");
     res.header("Control-Type","text/event-stream");
 
+    let assistanceText =""
     for await (const textPart of textStream) {
+      assistanceText+=textPart
       process.stdout.write(textPart);
       res.write(textPart);
     }
 
     const context = webSearch.results.map(r => r.content).join("\n\n");// result content form the web search 
+    // source url
+    const SOURCE = JSON.stringify(webResult.map(result => { url : result.url}));
 
     res.write("\n<SOURCE>\n")
     // Send resourch url
@@ -163,6 +167,14 @@ app.post('/preplexity_ask',Validation,async (req, res) => {
 
     
     res.end()
+
+    await prisma.message.create({
+      data:{
+        content : assistanceText + SOURCE,
+        role:"Assistant",
+        conversationId : conversation.id,
+      }
+    })
 
   } catch (error) {
     console.error(error);
