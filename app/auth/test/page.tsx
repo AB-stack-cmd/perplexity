@@ -2,10 +2,16 @@
 import { jwt_token } from "@/app/lib/supabase/token";
 import { createClient } from "@/app/lib/supabase/client";
 import { useEffect } from "react";
+import axios, { Axios } from "axios";
+
+
 export default  async function Page() {
 
   const supabase = createClient()
       
+  async function handleConveration() {
+    const res = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/conversation`)
+  }
 
   async function handleTest() {
   
