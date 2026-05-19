@@ -50,7 +50,7 @@ app.get("/conversation", Validation, async (req, res) => {
 
 app.post("/conversation/:conversation" , async(req,res)=>{
   try{
-    const conversationId = req.params.conversationId;
+    const conversationId = req.params.conversation;
     if(!conversationId){
       res.status(400).json({
         messsage : "Invalid Id"
