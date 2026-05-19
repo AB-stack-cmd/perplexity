@@ -7,7 +7,7 @@ import { PROMPT_TEMPLATE , SYSTEM_PROMT} from "./prompts.ts";
 import * as z from "zod";
 import prisma from "./db.ts"
 import Validation from "./middleware.ts";
-
+import  slugify  from "slugify";
 
 const app = express()
 app.use(express.json());
@@ -60,12 +60,13 @@ app.post("/conversation/:conversation" , async(req,res)=>{
     const conversation =  await prisma.conversation.findFirst({
       where:{
         id:conversationId,
-        userId:req.userId
+        su:req.userId
       },
       include:{
         messages:{orderBy:{createdAt:"asc"}}
       }
     });
+        
 
     res.json({conversation})
     if(!conversation){
@@ -81,25 +82,51 @@ app.post("/conversation/:conversation" , async(req,res)=>{
 
 app.post('/preplexity_ask',Validation,async (req, res) => {
 
-  const { query } =  req.body.query;
+  const { query } =  req.body;
 
   if(!query){
     return res.status(400).json({
       error:"empty query"
     })
-  }
+  };
+
+     if (!req.userId) {
+          return res.status(401).json({
+          success: false,
+          message: "Unauthorized",
+        });
+    };
+
   try{
+    const dbUser = await prisma.user.findFirst({
+      where: {
+         supabaseId: req.userId,
+        },
+        });
+
+    if (!dbUser) {
+        return res.status(404).json({
+            error: "User not found",
+      });
+      }
   // web search
    const webSearch = await client.search(query , {
     searchDepth:"advanced"
   });
 
   const webResult = webSearch.results; // result from trively
-
+  
   const conversation = await prisma.conversation.create({
     data:{
-      id:req.userId,
-      title: query.slice()
+      title:query.slice(0,80),
+      slug: slugify(query, {
+       lower: true,
+       strict: true,
+        }),
+      userId:req.userId,
+      messages:{
+        create :{content:query , role:"User"}
+      }
     }
   })
 
