@@ -80,7 +80,7 @@ app.post("/conversation/:conversation" , async(req,res)=>{
   }
 })
 
-app.post('/preplexity_ask',Validation,async (req, res) => {
+app.post('/purplexity_ask',Validation,async (req, res) => {
 
   const { query } =  req.body.query;
 
@@ -182,6 +182,153 @@ app.post('/preplexity_ask',Validation,async (req, res) => {
   }
 
 })
+
+app.post("/purplexity/follow_up",Validation,async(req,res)=>{
+  try {
+    // Validate request
+    const schema = z.object({
+      conversationId: z.string(),
+
+      query: z.string().min(1),
+    });
+
+    const parsed = schema.parse(req.body);
+
+    const { conversationId, query } = parsed;
+
+    // Auth check
+    if (!req.userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    // Find conversation
+    const conversation =
+      await prisma.conversation.findFirst({
+        where: {
+          id: conversationId,
+
+          userId: req.userId,
+        },
+
+        include: {
+          messages: {
+            orderBy: {
+              createdAt: "asc",
+            },
+          },
+        },
+      });
+
+    if (!conversation) {
+      return res.status(404).json({
+        success: false,
+        message: "Conversation not found",
+      });
+    }
+
+    // Save user message
+    await prisma.message.create({
+      data: {
+        content: query,
+        role: "User",
+        conversationId,
+      },
+    });
+
+    // Tavily search
+    const search = await client.search(
+      query,
+      {
+        searchDepth: "advanced",
+      }
+    );
+
+    const webResults = search.results;
+
+    // Build history
+    const history = conversation.messages
+      .map(
+        (m) =>
+          `${m.role}: ${m.content}`
+      )
+      .join("\n");
+
+    // Final prompt
+    const finalPrompt = `
+        Conversation History:
+        ${history}
+
+        Web Results:
+        ${JSON.stringify(webResults)}
+
+        User Follow-up:
+        ${query}
+        `;
+
+    // Stream AI response
+    const { textStream } = streamText({
+      model: "google/gemini-2.5-flash",
+
+      system:
+        "You are a helpful AI assistant.",
+
+      prompt: finalPrompt,
+    });
+
+    res.setHeader(
+      "Content-Type",
+      "text/event-stream"
+    );
+
+    res.setHeader(
+      "Cache-Control",
+      "no-cache"
+    );
+
+    let finalAnswer = "";
+
+    for await (const chunk of textStream) {
+      finalAnswer += chunk;
+
+      res.write(chunk);
+    }
+
+    // Save assistant message
+    await prisma.message.create({
+      data: {
+        content: finalAnswer,
+        role: "Assistant",
+        conversationId,
+      },
+    });
+
+    // Send sources
+    res.write("\n<SOURCES>\n");
+
+    res.write(
+      JSON.stringify(
+        webResults.map((r) => ({
+          title: r.title,
+          url: r.url,
+        }))
+      )
+    );
+
+    res.end();
+
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+});
+
 
 
 
