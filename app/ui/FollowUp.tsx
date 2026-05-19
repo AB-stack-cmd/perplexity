@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, use } from "react";
 import { ArrowUp } from "lucide-react";
 import { cn } from "@/lib/utils";
-
+import { useEffect } from "react";
 interface FollowUpsProps {
   onSearch?: (q: string) => void;
 }
@@ -25,6 +25,10 @@ export function FollowUps({ onSearch }: FollowUpsProps) {
       handleSubmit(e as unknown as React.FormEvent);
     }
   }
+   
+  useEffect(()=>{
+
+  },[])
 
   return (
     <div className="sticky bottom-6 pt-4">

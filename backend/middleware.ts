@@ -21,7 +21,7 @@ export default async function Validation(
     // Authorization header
     const auth = req.headers.authorization;
 
-    console.log("AUTH HEADER:", auth);
+    console.log("AUTH HEADER:", auth?.split(" ")[1]);
 
     // Validate header
     if (!auth || !auth.startsWith("Bearer ")) {

@@ -31,7 +31,7 @@ if(!client){
 app.get("/conversation", Validation, async (req, res) => {
   try {
 
-    console.log("2 userId:", req.userId);
+    console.log(" userId:", req.userId);
 
     return res.json({
       success: true,
@@ -82,7 +82,7 @@ app.post("/conversation/:conversation" , async(req,res)=>{
 
 app.post('/purplexity_ask',Validation,async (req, res) => {
 
-  const { query } =  req.body.query;
+  const { query } =  req.body;
 
   if(!query){
     return res.status(400).json({
@@ -155,11 +155,13 @@ app.post('/purplexity_ask',Validation,async (req, res) => {
       assistanceText+=textPart
       process.stdout.write(textPart);
       res.write(textPart);
+      console.log(textPart)
     }
 
     const context = webSearch.results.map(r => r.content).join("\n\n");// result content form the web search 
     // source url
     const SOURCE = JSON.stringify(webResult.map(result => { url : result.url}));
+    console.log(`source : ${SOURCE}`)
 
     res.write("\n<SOURCE>\n")
     // Send resourch url
@@ -287,6 +289,7 @@ app.post("/purplexity/follow_up",Validation,async(req,res)=>{
       "Cache-Control",
       "no-cache"
     );
+    res.header("X-Conversation-Id",conversation.id)
 
     let finalAnswer = "";
 
