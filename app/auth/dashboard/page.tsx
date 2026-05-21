@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { jwt_token } from "@/app/lib/supabase/token";
-
+import { Sidebar } from "lucide-react";
 interface Message {
   id: string;
   content: string;
@@ -18,9 +18,8 @@ interface Conversation {
 
 export default function ConversationUI() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
-
-  const [activeConversation, setActiveConversation] =
-    useState<Conversation | null>(null);
+  const [userId ,  setUserId] = useState();
+  const [activeConversation, setActiveConversation] =  useState<Conversation | null>(null);
 
   const [query, setQuery] = useState("");
 
@@ -43,7 +42,10 @@ export default function ConversationUI() {
 
       const data = await res.json();
 
-      setConversations(data.conversations || []);
+      setUserId(data.userId || null);
+      console.log(`userId : ${data.userId}`)
+
+      // setConversations(data.conversations || []);
     } catch (error) {
       console.error(error);
     }
@@ -74,6 +76,7 @@ export default function ConversationUI() {
 
       const reader = res.body?.getReader();
 
+      // decode res.write
       const decoder = new TextDecoder();
 
       let finalText = "";
@@ -111,7 +114,7 @@ export default function ConversationUI() {
 
       const data = await res.json();
 
-      setActiveConversation(data.conversation);
+      setActiveConversation(data.conversation || null);
     } catch (error) {
       console.error(error);
     }
@@ -156,7 +159,9 @@ export default function ConversationUI() {
         const chunk = decoder.decode(value);
 
         finalText += chunk;
+        
       }
+
 
       await fetchConversations();
 

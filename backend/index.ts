@@ -30,55 +30,115 @@ if(!client){
 
 app.get("/conversation", Validation, async (req, res) => {
   try {
+    console.log("Authenticated User ID:", req.userId);
 
-    console.log(" userId:", req.userId);
+    // Validate userId existence
+    if (!req.userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized access",
+      });
+    }
 
-    return res.json({
+    // Example response structure
+    return res.status(200).json({
       success: true,
-      userId : req.userId
+      message: "Conversation route accessed successfully",
+      data: {
+        userId: req.userId,
+        timestamp: new Date().toISOString(),
+      },
     });
 
-  } catch (e) {
-    console.error("FULL ERROR:", e);
+  } catch (error) {
+    console.error("Conversation Route Error:", error);
 
     return res.status(500).json({
       success: false,
-      error: e instanceof Error ? e.message : String(e),
+      message: "Internal Server Error",
+      error:
+        error instanceof Error
+          ? {
+              name: error.name,
+              message: error.message,
+              stack:
+                process.env.NODE_ENV === "development"
+                  ? error.stack
+                  : undefined,
+            }
+          : String(error),
     });
   }
 });
 
-app.post("/conversation/:conversation" , async(req,res)=>{
-  try{
-    const conversationId = req.params.conversation;
-    if(!conversationId){
-      res.status(400).json({
-        messsage : "Invalid Id"
-      })
-    };
+app.get(
+  "/conversation/:conversationId",
+  Validation,
+  async (req, res) => {
+    try {
+      const conversationId =
+        req.params.conversationId;
 
-    const conversation =  await prisma.conversation.findFirst({
-      where:{
-        id:conversationId,
-        su:req.userId
-      },
-      include:{
-        messages:{orderBy:{createdAt:"asc"}}
+      // Validate param
+      if (!conversationId) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid conversation ID",
+        });
       }
-    });
-        
 
-    res.json({conversation})
-    if(!conversation){
-      res.status(404).json({message : "Conversation not found"});
-      return;
+      // Validate auth
+      if (!req.userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Unauthorized",
+        });
+      }
+
+      // Find conversation
+      const conversation =
+        await prisma.conversation.findFirst({
+          where: {
+            id: conversationId,
+            userId: req.userId,
+          },
+
+          include: {
+            messages: {
+              orderBy: {
+                createdAt: "asc",
+              },
+            },
+          },
+        });
+
+      // Not found
+      if (!conversation) {
+        return res.status(404).json({
+          success: false,
+          message: "Conversation not found",
+        });
+      }
+
+      // Success response
+      return res.status(200).json({
+        success: true,
+        conversation,
+      });
+
+    } catch (error) {
+      console.error(
+        "Conversation Fetch Error:",
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+        message: "Internal Server Error",
+      });
     }
-
-  }catch(error){
-    console.error("conversation schema error")
-
   }
-})
+);
 
 app.post('/purplexity_ask',Validation,async (req, res) => {
 
