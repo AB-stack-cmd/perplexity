@@ -42,6 +42,7 @@ export default  function ConversationSidebar() {
       if (error) throw error;
         // Access token from session
         const jwt = session?.access_token;
+
         const user = session?.user
         console.log(user)
        
@@ -54,10 +55,11 @@ export default  function ConversationSidebar() {
             withCredentials: true,
           }
         );
+        console.log(response)
         console.log(response.data)
         
-        const filteredConversations = response.data;
-        console.log(`success ${response.success} \n message ${response.message}`)
+      
+        console.log(`success ${response.data.success} \n message ${response.message}`)
 
 
         setConversations(response.data|| []);
@@ -70,17 +72,16 @@ export default  function ConversationSidebar() {
 
     fetchConversations();
   }, []);
+    
 
-  //  useMemo(() => {
-  //   return conversations.filter((conversation) =>
-  //     conversation.title
-  //       .toLowerCase()
-  //       .includes(search.toLowerCase())
-  //   );
-  // }, [conversations, search]);
+   const filteredConversations = useMemo(() =>
+    conversations.filter((c) =>
+    c.title.toLowerCase().includes(search.toLowerCase())
+    ), [conversations, search]);
 
   return (
     <>
+    
       {/* Toggle Button */}
       <button
         onClick={() => setOpen(!open)}
@@ -181,7 +182,7 @@ export default  function ConversationSidebar() {
 
                   <p className="text-[10px] text-zinc-500 mt-1 truncate">
                     {new Date(
-                      conversation.createdAt
+                      conversation.createAt
                     ).toLocaleDateString()}
                   </p>
                 </div>

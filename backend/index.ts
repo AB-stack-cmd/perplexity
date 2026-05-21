@@ -8,6 +8,7 @@ import * as z from "zod";
 import prisma from "./db.ts"
 import Validation from "./middleware.ts";
 import  slugify  from "slugify";
+import { timeStamp } from "node:console";
 
 const app = express()
 app.use(express.json());
@@ -30,25 +31,29 @@ if(!client){
 
 app.get("/conversation", Validation, async (req, res) => {
   try {
-    console.log("Authenticated User ID:", req.userId);
-
-    // Validate userId existence
-    if (!req.userId) {
+     if (!req.userId) {
       return res.status(401).json({
         success: false,
         message: "Unauthorized access",
       });
     }
+    console.log("Authenticated User ID:", req.userId);
 
-    // Example response structure
-    return res.status(200).json({
-      success: true,
-      message: "Conversation route accessed successfully",
-      data: {
-        userId: req.userId,
-        timestamp: new Date().toISOString(),
-      },
-    });
+      const conversations = await prisma.conversation.findMany({
+      where: { userId: req.userId },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, title: true, slug: true, createdAt: true },
+      });
+      console.log(`conversation :${conversations}`)
+
+        if (!conversations){
+          console.log("no conversation")
+          res.json({message : "no conversation found"})
+        }
+      return res.status(200).json({conversations:conversations ,  userId : req.userId} );
+      
+    // Validate userId existence
+    
 
   } catch (error) {
     console.error("Conversation Route Error:", error);
@@ -87,13 +92,13 @@ app.get(
         });
       }
 
-      // Validate auth
-      if (!req.userId) {
-        return res.status(401).json({
-          success: false,
-          message: "Unauthorized",
-        });
-      }
+        // Validate auth
+        if (!req.userId) {
+          return res.status(401).json({
+            success: false,
+            message: "Unauthorized",
+          });
+        }
 
       // Find conversation
       const conversation =
