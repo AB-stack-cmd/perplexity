@@ -118,6 +118,7 @@ export default function ChatPage() {
           ? <FollowUpPanel conversation={active} />
           : <EmptyState />}
       </main>
+      <FollowUpPanel conversation={conversations}/>
     </div>
   );
 }
