@@ -23,6 +23,11 @@ app.use(
 
 const port = process.env.PORT 
 
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+
+export const google = createGoogleGenerativeAI({
+  apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY!,
+});
 
 const client = tavily({ apiKey:process.env.TAVILY_API_KEY });
 if(!client){
@@ -188,7 +193,7 @@ app.post('/purplexity_ask',Validation,async (req, res) => {
        lower: true,
        strict: true,
         }),
-      userId:req.userId,
+      userId:dbUser.id,
       messages:{
         create :{content:query , role:"User"}
       }
@@ -201,7 +206,7 @@ app.post('/purplexity_ask',Validation,async (req, res) => {
 
   // Get response in with output format according to schema
   const { textStream } = streamText({
-      model: "google/gemini-2.5-flash",
+      model: google("gemini-2.5-flash"),
       prompt: Prompt,
       system: SYSTEM_PROMT,
       output:Output.object({
@@ -252,6 +257,7 @@ app.post('/purplexity_ask',Validation,async (req, res) => {
 
 app.post("/purplexity/follow_up",Validation,async(req,res)=>{
   try {
+     console.log(`Body :${req.body.query} id: ${req.body.conversa}`)
     // Validate request
     const schema = z.object({
       conversationId: z.string(),
@@ -260,6 +266,7 @@ app.post("/purplexity/follow_up",Validation,async(req,res)=>{
     });
 
     const parsed = schema.parse(req.body);
+   
 
     const { conversationId, query } = parsed;
 

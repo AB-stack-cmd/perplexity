@@ -191,8 +191,7 @@ export async function askPerplexity(
     );
   }
 
-  const response = await fetch(
-    `${BASE_URL}/purplexity_ask`,
+  const response = await fetch(`${BASE_URL}/purplexity_ask`,
     {
       method: "POST",
 
@@ -240,8 +239,7 @@ export async function followUpConversation(
     );
   }
 
-  const response = await fetch(
-    `${BASE_URL}/purplexity/follow_up`,
+  const response = await fetch(`${BASE_URL}/purplexity/follow_up`,
     {
       method: "POST",
 
