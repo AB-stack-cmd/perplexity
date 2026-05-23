@@ -122,6 +122,8 @@ app.get(
           },
         });
 
+        console.log(`conversation ${conversation}`)
+
       // Not found
       if (!conversation) {
         return res.status(404).json({
@@ -344,7 +346,7 @@ app.post("/purplexity/follow_up",Validation,async(req,res)=>{
 
     // Stream AI response
     const { textStream } = streamText({
-      model: "google/gemini-2.5-flash",
+      model: google("/gemini-2.5-flash"),
 
       system:
         "You are a helpful AI assistant.",

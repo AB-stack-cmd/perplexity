@@ -9,6 +9,8 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { createClient } from "../lib/supabase/client";
+import { useRouter } from "next/navigation";
+
 
 const supabase = createClient();
 const API = "http://localhost:4000";
@@ -25,7 +27,7 @@ function Favicon({ url }: { url: string }) {
       onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
   );
 }
-
+const [userId , setUserId] = useState("")
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function ChatPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -33,7 +35,7 @@ export default function ChatPage() {
   const [search, setSearch] = useState("");
   const [active, setActive] = useState<Conversation | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-
+  const router = useRouter()
   const fetchConversations = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -42,6 +44,11 @@ export default function ChatPage() {
         withCredentials: true,
       });
       setConversations(res.data.conversations || []);
+      setUserId(res.data.userId || "")
+      
+      if(!session?.access_token){
+        router.push("/")
+      }
     } catch (e) { console.error(e); }
     finally { setLoadingConvs(false); }
   };
@@ -156,7 +163,9 @@ function NewThreadPanel({ onCreated }: { onCreated: (conv: Conversation) => void
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [answer]);
-
+  useEffect(()=> { 
+    const response = axios.get()
+  })
   const handleAsk = async (q?: string) => {
     const text = (q ?? query).trim();
     if (!text || streaming) return;
