@@ -7,7 +7,7 @@ import { GitHubIcon } from "../icons/gitHubIcon";
 import { GoogleIcon } from "../icons/googleIcon";
 const supabase = createClient();
 
-export default function Auth() {
+export default function SignIn() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState<"github" | "google" | "email" | null>(null);
