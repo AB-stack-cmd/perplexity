@@ -94,6 +94,7 @@ export default function Main() {
   useEffect(() => {
     async function getText() {
       try {
+        console.log(`origin ${window.location.origin}`)
         if (query.length < 2) return;
 
         const token = await getToken();

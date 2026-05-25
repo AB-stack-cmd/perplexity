@@ -76,7 +76,7 @@ export default function ConversationUI() {
 
       const reader = res.body?.getReader();
 
-      // decode res.write
+      // decode res.write 
       const decoder = new TextDecoder();
 
       let finalText = "";
