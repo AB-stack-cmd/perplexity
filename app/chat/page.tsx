@@ -164,7 +164,7 @@ function NewThreadPanel({ onCreated }: { onCreated: (conv: Conversation) => void
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [answer]);
   useEffect(()=> { 
-    const response = axios.get()
+    // const response = axios.get()
   })
   const handleAsk = async (q?: string) => {
     const text = (q ?? query).trim();

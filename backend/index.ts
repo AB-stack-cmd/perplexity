@@ -242,13 +242,16 @@ app.post('/purplexity_ask',Validation,async (req, res) => {
     
     res.end()
 
-    await prisma.message.create({
+    const messages = await prisma.message.create({
       data:{
         content : assistanceText + SOURCE,
         role:"Assistant",
         conversationId : conversation.id,
       }
-    })
+    });
+
+    // check messages
+    console.log(messages.content)
 
   } catch (error) {
     console.error(error);

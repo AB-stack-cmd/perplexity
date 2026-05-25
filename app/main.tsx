@@ -1,9 +1,10 @@
-"use client"
+"use client";
+
 import { useRouter } from "next/navigation";
 import { createClient } from "./lib/supabase/client";
-import { useEffect } from "react";
-// api/conversation.ts
-const supabase = createClient()
+import { useEffect, useState } from "react";
+
+const supabase = createClient();
 
 const BASE_URL = "http://localhost:4000";
 
@@ -20,49 +21,35 @@ async function getToken() {
 
 /**
  * GET /conversation
- * Fetch all conversations
  */
 export async function getConversations() {
   try {
     const token = await getToken();
 
-    const res = await fetch(
-      `${BASE_URL}/conversation`,
-      {
-        method: "GET",
+    const res = await fetch(`${BASE_URL}/conversation`, {
+      method: "GET",
 
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
 
     if (!res.ok) {
-      throw new Error(
-        `Failed: ${res.status}`
-      );
+      throw new Error(`Failed: ${res.status}`);
     }
 
     const data = await res.json();
 
-    console.log(
-      "All Conversations:",
-      data
-    );
+    console.log("All Conversations:", data);
 
     return data;
-
   } catch (error) {
-    console.error(
-      "Conversation Fetch Error:",
-      error
-    );
+    console.error("Conversation Fetch Error:", error);
   }
 }
 
 /**
  * GET /conversation/:conversationId
- * Fetch single conversation
  */
 export async function getConversationById(
   conversationId: string
@@ -82,46 +69,101 @@ export async function getConversationById(
     );
 
     if (!res.ok) {
-      throw new Error(
-        `Failed: ${res.status}`
-      );
+      throw new Error(`Failed: ${res.status}`);
     }
 
     const data = await res.json();
 
-    console.log(
-      "Single Conversation:",
-      data
-    );
+    console.log("Single Conversation:", data);
 
     return data;
-
   } catch (error) {
-    console.error(
-      "Single Conversation Error:",
-      error
-    );
+    console.error("Single Conversation Error:", error);
   }
 }
 
-export default function Main(){
+export default function Main() {
+  const router = useRouter();
 
+  const [query, setQuery] = useState("");
+  const [text, setText] = useState("");
+
+  /**
+   * AI streaming request
+   */
   useEffect(() => {
+    async function getText() {
+      try {
+        if (query.length < 2) return;
 
+        const token = await getToken();
+
+        const res = await fetch(
+          "http://localhost:4000/purplexity_ask",
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type": "application/json",
+
+              Authorization: `Bearer ${token}`,
+            },
+
+            body: JSON.stringify({
+              query,
+            }),
+          }
+        );
+
+        if (!res.body) return;
+
+        const reader = res.body.getReader();
+
+        const decoder = new TextDecoder();
+
+        let finalText = "";
+
+        while (true) {
+          const { done, value } =
+            await reader.read();
+
+          if (done) break;
+
+          const chunk =
+            decoder.decode(value);
+
+          finalText += chunk;
+
+          setText(finalText);
+        }
+      } catch (error) {
+        console.error(
+          "Streaming Error:",
+          error
+        );
+      }
+    }
+
+    getText();
+  }, [query]);
+
+  /**
+   * Fetch conversations
+   */
+  useEffect(() => {
     async function test() {
-
-      // fetch all conversations
       const conversations =
         await getConversations();
 
       console.log(conversations);
 
-      // fetch first conversation
       if (
-        conversations?.conversations?.length
+        conversations?.conversations
+          ?.length
       ) {
         const firstId =
-          conversations.conversations[0].id;
+          conversations.conversations[0]
+            .id;
 
         const single =
           await getConversationById(
@@ -133,15 +175,49 @@ export default function Main(){
     }
 
     test();
-
   }, []);
-    const router = useRouter();
 
-    return( <div>
+  return (
+    <div>
+      <h1 className="border p-2">
+        Home
+      </h1>
 
-        <h1 className="border p-2 "> Home</h1>
-        <button className="font-bold border p-3" onClick={()=>router.push("/auth")}> Auth </button>
-        <button onClick={()=> router.push("/auth/dashboard")}>Dashboard</button>
-        
-    </div>)
+      <button
+        className="font-bold border p-3"
+        onClick={() =>
+          router.push("/auth")
+        }
+      >
+        Auth
+      </button>
+
+      <button
+        onClick={() =>
+          router.push(
+            "/auth/dashboard"
+          )
+        }
+      >
+        Dashboard
+      </button>
+
+      <textarea
+        onChange={(e) =>
+          setQuery(e.target.value)
+        }
+        name="ask"
+        id="value"
+        placeholder="Ask to ai"
+      />
+
+      <div>
+        <h2>
+          {text.length > 0
+            ? text
+            : "text will show here"}
+        </h2>
+      </div>
+    </div>
+  );
 }
