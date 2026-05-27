@@ -2,7 +2,7 @@
 
 import { createClient } from "../lib/supabase/client";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { GitHubIcon } from "../icons/gitHubIcon";
 import { GoogleIcon } from "../icons/googleIcon";
 const supabase = createClient();
@@ -11,6 +11,17 @@ export default function SignIn() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState<"github" | "google" | "email" | null>(null);
+  const [token , setToken ] = useState("")
+  useEffect(()=>{
+    async function jwt(){
+      const {data: { session },error,} = await supabase.auth.getSession();
+    
+                if (error) throw error;
+                 // Access token from session
+                const jwt = session?.access_token;
+                setToken(jwt || "")
+    }
+  },[]);
 
   async function loginWithOAuth(provider: "github" | "google") {
     try {
@@ -26,6 +37,7 @@ export default function SignIn() {
     } catch (error) {
       alert("An unexpected error occurred: " + (error as Error).message);
     } finally {
+      router.push("/chat")
       setLoading(null);
     }
   }
@@ -44,6 +56,7 @@ export default function SignIn() {
     } catch (error) {
       alert("An unexpected error occurred: " + (error as Error).message);
     } finally {
+      router.push("/chat")
       setLoading(null);
     }
   }
@@ -61,10 +74,10 @@ export default function SignIn() {
 
         {/* Heading */}
         <h1 className="text-xl font-medium text-zinc-900 dark:text-zinc-50 mb-2">
-          Welcome back
+          Welcome 
         </h1>
         <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-8 text-center">
-          Sign in to continue to your dashboard
+          Sign in to continue to chat
         </p>
 
         {/* OAuth buttons */}

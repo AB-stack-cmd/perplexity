@@ -27,9 +27,10 @@ function Favicon({ url }: { url: string }) {
       onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
   );
 }
-const [userId , setUserId] = useState("")
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function ChatPage() {
+  const [userId , setUserId] = useState("")
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loadingConvs, setLoadingConvs] = useState(true);
   const [search, setSearch] = useState("");
