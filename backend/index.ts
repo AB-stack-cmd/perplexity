@@ -152,6 +152,53 @@ app.get(
   }
 );
 
+app.post(
+  "/conversation/new",
+  Validation,
+  async (req, res) => {
+    try {
+      if (!req.userId) {
+        return res.status(401).json({
+          success: false,
+          message: "Unauthorized",
+        });
+      }
+
+      const conversation =
+        await prisma.conversation.create({
+          data: {
+            title: "New Chat",
+
+            slug: slugify(
+              `chat-${Date.now()}`,
+              {
+                lower: true,
+                strict: true,
+              }
+            ),
+
+            userId: req.userId,
+          },
+        });
+
+      return res.status(201).json({
+        success: true,
+        conversation,
+      });
+
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        success: false,
+        message:
+          "Internal Server Error",
+      });
+    }
+  }
+);
+
+
 app.post('/purplexity_ask',Validation,async (req, res) => {
 
   const { query } =  req.body;

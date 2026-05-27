@@ -173,6 +173,26 @@ export default function ConversationUI() {
     }
   }
 
+  // New coneversation
+  async function handleNewChat() {
+    await fetch(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/conversation/new`,
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type": "application/json",
+
+            Authorization: `Bearer ${jwt}`,
+          },
+
+          body: JSON.stringify({
+            query,
+          }),
+        }
+      );
+  }
+
   // Follow-up
   async function handleFollowup() {
     if (!query.trim()) return;
