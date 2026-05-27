@@ -103,7 +103,7 @@ export default function SignupPage() {
               <path d="M8 1L14 4.5V11.5L8 15L2 11.5V4.5L8 1Z" fill="white" fillOpacity="0.9"/>
             </svg>
           </div>
-          <span className="auth-logo-text">Nexus</span>
+          <span className="auth-logo-text">Perplexity</span>
         </div>
 
         <h1 className="auth-heading">Create account</h1>
