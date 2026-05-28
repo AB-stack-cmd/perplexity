@@ -1,4 +1,5 @@
-import express, { Request, Response } from "express";
+import express from "express";
+import type { Request , Response } from "express";
 import "dotenv/config";
 import { tavily } from "@tavily/core";
 import { streamText, Output } from "ai";
