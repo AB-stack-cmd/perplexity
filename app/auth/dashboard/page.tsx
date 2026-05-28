@@ -253,6 +253,7 @@ export default function ConversationUI() {
 
   useEffect(() => {
     fetchConversations();
+
   }, []);
 
   return (
@@ -333,6 +334,7 @@ export default function ConversationUI() {
               onClick={() => {
                 if (activeConversation) {
                   handleFollowup();
+                  handleAskResponse();
                 } else {
                   handleAsk();
                 }

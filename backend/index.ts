@@ -10,6 +10,7 @@ import Validation from "./middleware.ts";
 import  slugify  from "slugify";
 import { timeStamp } from "node:console";
 
+
 const app = express()
 app.use(express.json());
 app.use(
@@ -22,6 +23,7 @@ app.use(
 );
 
 const port = process.env.PORT 
+
 
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 
@@ -36,6 +38,7 @@ if(!client){
 
 app.get("/conversation", Validation, async (req, res) => {
   try {
+    console.log(`conversation route..\n`)
      if (!req.userId) {
       return res.status(401).json({
         success: false,
@@ -86,6 +89,7 @@ app.get(
   Validation,
   async (req, res) => {
     try {
+      console.log("conversation id started...")
       const conversationId =
         req.params.conversationId;
 
@@ -201,6 +205,7 @@ app.post(
 
 app.post('/purplexity_ask',Validation,async (req, res) => {
 
+  console.log(`ask route...`)
   const { query } =  req.body;
 
   if(!query){
@@ -278,6 +283,7 @@ app.post('/purplexity_ask',Validation,async (req, res) => {
     }
 
     const context = webSearch.results.map(r => r.content).join("\n\n");// result content form the web search 
+    console.log(`context : ${context}`)
     // source url
     const SOURCE = JSON.stringify(webResult.map(result => { url : result.url}));
     console.log(`source : ${SOURCE}`)
@@ -298,7 +304,7 @@ app.post('/purplexity_ask',Validation,async (req, res) => {
     });
 
     // check messages
-    console.log(messages.content)
+    console.log(`Message content : ${messages.content}`)
 
   } catch (error) {
     console.error(error);
@@ -308,6 +314,7 @@ app.post('/purplexity_ask',Validation,async (req, res) => {
 })
 
 app.post("/purplexity/follow_up",Validation,async(req,res)=>{
+  console.log("follow up started...")
   try {
      console.log(`Body :${req.body.query} id: ${req.body.conversa}`)
     // Validate request
@@ -403,6 +410,7 @@ app.post("/purplexity/follow_up",Validation,async(req,res)=>{
 
       prompt: finalPrompt,
     });
+    console.log(`Stream Text Answer ${streamText}`)
 
     res.setHeader(
       "Content-Type",
@@ -424,13 +432,14 @@ app.post("/purplexity/follow_up",Validation,async(req,res)=>{
     }
 
     // Save assistant message
-    await prisma.message.create({
+    const finalAnswer_db = await prisma.message.create({
       data: {
         content: finalAnswer,
         role: "Assistant",
         conversationId,
       },
     });
+    console.log(`Final AnswerSaved : ${finalAnswer_db}`)
 
     // Send sources
     res.write("\n<SOURCES>\n");
