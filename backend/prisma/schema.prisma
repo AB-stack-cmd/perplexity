@@ -1,57 +1,71 @@
-// This is your Prisma schema file
-// https://pris.ly/d/prisma-schema
+// ─── Prisma Config ────────────────────────────────────────────────────────────
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
-
 }
 
-model User {
-  id            String          @id @default(uuid())
-  email         String          @unique
-  provider      AuthProvider
-  name          String
-  supabaseId    String          @unique
-  conversations Conversation[]
+// ─── Enums ────────────────────────────────────────────────────────────────────
 
-  createdAt     DateTime        @default(now())
-}
-
-enum AuthProvider {
-  Github
+enum Provider {
   Google
+  Github
 }
 
-enum MessageRole {
+enum Role {
   User
   Assistant
 }
 
-model Conversation {
-  id        String    @id @default(uuid())
-  title     String?
-  slug      String    @unique
+// ─── Models ───────────────────────────────────────────────────────────────────
 
+model User {
+  id          String         @id @default(cuid())
+  supabaseId  String         @unique           // used by middleware upsert + lookup
+  email       String
+  name        String
+  provider    Provider
+
+  conversations Conversation[]
+
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([supabaseId])                        // middleware queries this on every request
+  @@map("users")
+}
+
+model Conversation {
+  id        String    @id @default(cuid())
+  title     String
+  slug      String    @unique
+  
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    String
-  user      User      @relation(fields: [userId], references: [id])
 
   messages  Message[]
 
   createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([userId])                            // GET /conversation filters by userId
+  @@index([userId, createdAt(sort: Desc)])     // ordered list query
+  @@map("conversations")
 }
 
 model Message {
-  id              Int             @id @default(autoincrement())
-  content         String
-  role            MessageRole
+  id      String  @id @default(cuid())
+  content String  @db.Text                     // answers can be very long
+  role    Role
 
-  conversationId  String
-  conversation    Conversation    @relation(fields: [conversationId], references: [id])
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId String
 
-  createdAt       DateTime        @default(now())
+  createdAt DateTime @default(now())
+
+  @@index([conversationId])                    // messages are always fetched by conversation
+  @@map("messages")
 }
