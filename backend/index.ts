@@ -1,474 +1,304 @@
-import express from "express"
-import "dotenv/config"
-import { tavily } from "@tavily/core"
-import { streamText  ,  Output} from 'ai';
-import cors from "cors"
-import { PROMPT_TEMPLATE , SYSTEM_PROMT} from "./prompts.ts";
+import express, { Request, Response } from "express";
+import "dotenv/config";
+import { tavily } from "@tavily/core";
+import { streamText, Output } from "ai";
+import cors from "cors";
 import * as z from "zod";
-import prisma from "./db.ts"
+import slugify from "slugify";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+
+import { PROMPT_TEMPLATE, SYSTEM_PROMT } from "./prompts.ts";
+import prisma from "./db.ts";
 import Validation from "./middleware.ts";
-import  slugify  from "slugify";
-import { timeStamp } from "node:console";
 
+// ─── Clients ──────────────────────────────────────────────────────────────────
 
-const app = express()
+export const google = createGoogleGenerativeAI({
+  apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY!,
+});
+
+const tavilyClient = tavily({ apiKey: process.env.TAVILY_API_KEY! });
+
+// ─── App ──────────────────────────────────────────────────────────────────────
+
+const app = express();
+const PORT = process.env.PORT ?? 8080;
+
 app.use(express.json());
 app.use(
   cors({
-    origin: "http://localhost:3000", // frontend URL
+    origin: "http://localhost:3000",
     methods: ["GET", "POST", "PUT", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
   })
 );
 
-const port = process.env.PORT 
+// ─── Shared Helpers ───────────────────────────────────────────────────────────
 
-
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
-
-export const google = createGoogleGenerativeAI({
-  apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY!,
-});
-
-const client = tavily({ apiKey:process.env.TAVILY_API_KEY });
-if(!client){
-  console.error(`Error : ${client}`)  
+/** Sets SSE headers required for streaming responses. */
+function setSseHeaders(res: Response): void {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("X-Accel-Buffering", "no"); // disables Nginx proxy buffering
 }
 
-app.get("/conversation", Validation, async (req, res) => {
-  try {
-    console.log(`conversation route..\n`)
-     if (!req.userId) {
-      return res.status(401).json({
-        success: false,
-        message: "Unauthorized access",
-      });
-    }
-    console.log("Authenticated User ID:", req.userId);
+/** Collects a streaming text response and simultaneously writes it to `res`. */
+async function pipeTextStream(
+  stream: AsyncIterable<string>,
+  res: Response
+): Promise<string> {
+  let full = "";
+  for await (const chunk of stream) {
+    full += chunk;
+    res.write(chunk);
+  }
+  return full;
+}
 
-      const conversations = await prisma.conversation.findMany({
-      where: { userId: req.userId },
+/** Serialises web results into a source-list JSON string. */
+function formatSources(results: Array<{ url: string; title: string }>): string {
+  return JSON.stringify(results.map(({ url, title }) => ({ url, title })));
+}
+
+/** Unified 500 handler — hides internals in production. */
+function serverError(res: Response, error: unknown): void {
+  console.error(error);
+  res.status(500).json({
+    success: false,
+    message: "Internal Server Error",
+    ...(process.env.NODE_ENV === "development" && {
+      detail: error instanceof Error ? error.message : String(error),
+    }),
+  });
+}
+
+// ─── Routes ──────────────────────────────────────────────────────────────────
+
+/**
+ * GET /conversation
+ * Returns all conversations for the authenticated user, newest first.
+ */
+app.get("/conversation", Validation, async (req: Request, res: Response) => {
+  try {
+    const conversations = await prisma.conversation.findMany({
+      where: { userId: req.dbUserId },
       orderBy: { createdAt: "desc" },
       select: { id: true, title: true, slug: true, createdAt: true },
-      });
-      console.log(`conversation :${conversations}`)
-
-        if (!conversations){
-          console.log("no conversation")
-          res.json({message : "no conversation found"})
-        }
-      return res.status(200).json({conversations:conversations ,  userId : req.userId} );
-      
-    // Validate userId existence
-    
-
-  } catch (error) {
-    console.error("Conversation Route Error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Internal Server Error",
-      error:
-        error instanceof Error
-          ? {
-              name: error.name,
-              message: error.message,
-              stack:
-                process.env.NODE_ENV === "development"
-                  ? error.stack
-                  : undefined,
-            }
-          : String(error),
     });
+
+    res.status(200).json({ conversations });
+  } catch (error) {
+    serverError(res, error);
   }
 });
 
+/**
+ * GET /conversation/:conversationId
+ * Returns a single conversation with its full message history.
+ */
 app.get(
   "/conversation/:conversationId",
   Validation,
-  async (req, res) => {
+  async (req: Request, res: Response) => {
+    const { conversationId } = req.params;
+
     try {
-      console.log("conversation id started...")
-      const conversationId =
-        req.params.conversationId;
+      const conversation = await prisma.conversation.findFirst({
+        where: { id: conversationId, userId: req.dbUserId },
+        include: { messages: { orderBy: { createdAt: "asc" } } },
+      });
 
-      // Validate param
-      if (!conversationId) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid conversation ID",
-        });
-      }
-
-        // Validate auth
-        if (!req.userId) {
-          return res.status(401).json({
-            success: false,
-            message: "Unauthorized",
-          });
-        }
-
-      // Find conversation
-      const conversation =
-        await prisma.conversation.findFirst({
-          where: {
-            id: conversationId,
-            userId: req.userId,
-          },
-
-          include: {
-            messages: {
-              orderBy: {
-                createdAt: "asc",
-              },
-            },
-          },
-        });
-
-        console.log(`conversation ${conversation}`)
-
-      // Not found
       if (!conversation) {
-        return res.status(404).json({
-          success: false,
-          message: "Conversation not found",
-        });
+        return res
+          .status(404)
+          .json({ success: false, message: "Conversation not found" });
       }
 
-      // Success response
-      return res.status(200).json({
-        success: true,
-        conversation,
-      });
-
+      res.status(200).json({ success: true, conversation });
     } catch (error) {
-      console.error(
-        "Conversation Fetch Error:",
-        error
-      );
-
-      return res.status(500).json({
-        success: false,
-        message: "Internal Server Error",
-      });
+      serverError(res, error);
     }
   }
 );
 
+/**
+ * POST /conversation/new
+ * Creates a blank conversation for the authenticated user.
+ */
 app.post(
   "/conversation/new",
   Validation,
-  async (req, res) => {
+  async (req: Request, res: Response) => {
     try {
-      if (!req.userId) {
-        return res.status(401).json({
-          success: false,
-          message: "Unauthorized",
-        });
-      }
-
-      const conversation =
-        await prisma.conversation.create({
-          data: {
-            title: "New Chat",
-
-            slug: slugify(
-              `chat-${Date.now()}`,
-              {
-                lower: true,
-                strict: true,
-              }
-            ),
-
-            userId: req.userId,
-          },
-        });
-
-      return res.status(201).json({
-        success: true,
-        conversation,
+      const conversation = await prisma.conversation.create({
+        data: {
+          title: "New Chat",
+          slug: slugify(`chat-${Date.now()}`, { lower: true, strict: true }),
+          userId: req.dbUserId!,
+        },
       });
 
+      res.status(201).json({ success: true, conversation });
     } catch (error) {
-      console.error(error);
-
-      return res.status(500).json({
-        success: false,
-        message:
-          "Internal Server Error",
-      });
+      serverError(res, error);
     }
   }
 );
 
+/**
+ * POST /purplexity_ask
+ * Handles the first message: web search → streamed AI answer → persists history.
+ */
+app.post(
+  "/purplexity_ask",
+  Validation,
+  async (req: Request, res: Response) => {
+    const { query } = req.body as { query?: string };
 
-app.post('/purplexity_ask',Validation,async (req, res) => {
+    if (!query?.trim()) {
+      return res.status(400).json({ error: "Query must not be empty" });
+    }
 
-  console.log(`ask route...`)
-  const { query } =  req.body;
-
-  if(!query){
-    return res.status(400).json({
-      error:"empty query"
-    })
-  };
-
-     if (!req.userId) {
-          return res.status(401).json({
-          success: false,
-          message: "Unauthorized",
-        });
-    };
-
-  try{
-    const dbUser = await prisma.user.findFirst({
-      where: {
-         supabaseId: req.userId,
-        },
-        });
-
-    if (!dbUser) {
-        return res.status(404).json({
-            error: "User not found",
+    try {
+      const { results: webResults } = await tavilyClient.search(query, {
+        searchDepth: "advanced",
       });
-      }
-  // web search
-   const webSearch = await client.search(query , {
-    searchDepth:"advanced"
-  });
 
-  const webResult = webSearch.results; // result from trively
-  
-  const conversation = await prisma.conversation.create({
-    data:{
-      title:query.slice(0,80),
-      slug: slugify(query, {
-       lower: true,
-       strict: true,
+      // Create conversation + first user message in one transaction
+      const conversation = await prisma.conversation.create({
+        data: {
+          title: query.slice(0, 80),
+          slug: slugify(query, { lower: true, strict: true }),
+          userId: req.dbUserId!, // ✅ already resolved by middleware — no extra DB call
+          messages: { create: { content: query, role: "User" } },
+        },
+      });
+
+      const prompt = PROMPT_TEMPLATE
+        .replace("{{WEB_SEARCH_RESULTS}}", JSON.stringify(webResults))
+        .replace("{{USER_QUERY}}", JSON.stringify(query));
+
+      const { textStream } = streamText({
+        model: google("gemini-2.5-flash"),
+        system: SYSTEM_PROMT,
+        prompt,
+        output: Output.object({
+          schema: z.object({
+            followUps: z.array(z.string()),
+            answer: z.string(),
+          }),
         }),
-      userId:dbUser.id,
-      messages:{
-        create :{content:query , role:"User"}
-      }
+      });
+
+      setSseHeaders(res);
+
+      const assistantText = await pipeTextStream(textStream, res);
+
+      res.write("\n<SOURCE>\n");
+      res.write(formatSources(webResults));
+      res.end();
+
+      // Persist after stream ends so the client isn't blocked
+      await prisma.message.create({
+        data: {
+          content: assistantText,
+          role: "Assistant",
+          conversationId: conversation.id,
+        },
+      });
+    } catch (error) {
+      if (res.headersSent) { res.end(); return; }
+      serverError(res, error);
     }
-  })
-
-  const Prompt = PROMPT_TEMPLATE
-                .replace("{{WEB_SEARCH_RESULTS}}",JSON.stringify(webResult))
-                .replace("{{USER_QUERY}}",JSON.stringify(query));
-
-  // Get response in with output format according to schema
-  const { textStream } = streamText({
-      model: google("gemini-2.5-flash"),
-      prompt: Prompt,
-      system: SYSTEM_PROMT,
-      output:Output.object({
-        schema:z.object({
-          followUps:z.array(z.string()),
-          answer:z.string()
-        })
-      })
-    });
-
-    res.header("Cache-Control","no-cache");
-    res.header("Control-Type","text/event-stream");
-
-    let assistanceText =""
-    for await (const textPart of textStream) {
-      assistanceText+=textPart
-      process.stdout.write(textPart);
-      res.write(textPart);
-      console.log(textPart)
-    }
-
-    const context = webSearch.results.map(r => r.content).join("\n\n");// result content form the web search 
-    console.log(`context : ${context}`)
-    // source url
-    const SOURCE = JSON.stringify(webResult.map(result => { url : result.url}));
-    console.log(`source : ${SOURCE}`)
-
-    res.write("\n<SOURCE>\n")
-    // Send resourch url
-    res.write(JSON.stringify(webResult.map(result => { url : result.url})))
-
-    
-    res.end()
-
-    const messages = await prisma.message.create({
-      data:{
-        content : assistanceText + SOURCE,
-        role:"Assistant",
-        conversationId : conversation.id,
-      }
-    });
-
-    // check messages
-    console.log(`Message content : ${messages.content}`)
-
-  } catch (error) {
-    console.error(error);
-     res.status(500).json({ error: "Internal Server Error" });
   }
+);
 
-})
-
-app.post("/purplexity/follow_up",Validation,async(req,res)=>{
-  console.log("follow up started...")
-  try {
-     console.log(`Body :${req.body.query} id: ${req.body.conversa}`)
-    // Validate request
+/**
+ * POST /purplexity/follow_up
+ * Handles follow-up messages in an existing conversation.
+ */
+app.post(
+  "/purplexity/follow_up",
+  Validation,
+  async (req: Request, res: Response) => {
     const schema = z.object({
       conversationId: z.string(),
-
       query: z.string().min(1),
     });
 
-    const parsed = schema.parse(req.body);
-   
-
-    const { conversationId, query } = parsed;
-
-    // Auth check
-    if (!req.userId) {
-      return res.status(401).json({
-        success: false,
-        message: "Unauthorized",
-      });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ success: false, message: parsed.error.message });
     }
 
-    // Find conversation
-    const conversation =
-      await prisma.conversation.findFirst({
-        where: {
-          id: conversationId,
+    const { conversationId, query } = parsed.data;
 
-          userId: req.userId,
-        },
-
-        include: {
-          messages: {
-            orderBy: {
-              createdAt: "asc",
-            },
-          },
-        },
+    try {
+      const conversation = await prisma.conversation.findFirst({
+        where: { id: conversationId, userId: req.dbUserId },
+        include: { messages: { orderBy: { createdAt: "asc" } } },
       });
 
-    if (!conversation) {
-      return res.status(404).json({
-        success: false,
-        message: "Conversation not found",
-      });
-    }
-
-    // Save user message
-    await prisma.message.create({
-      data: {
-        content: query,
-        role: "User",
-        conversationId,
-      },
-    });
-
-    // Tavily search
-    const search = await client.search(
-      query,
-      {
-        searchDepth: "advanced",
+      if (!conversation) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Conversation not found" });
       }
-    );
 
-    const webResults = search.results;
+      // Persist user message before we start the search + stream
+      await prisma.message.create({
+        data: { content: query, role: "User", conversationId },
+      });
 
-    // Build history
-    const history = conversation.messages
-      .map(
-        (m) =>
-          `${m.role}: ${m.content}`
-      )
-      .join("\n");
+      const { results: webResults } = await tavilyClient.search(query, {
+        searchDepth: "advanced",
+      });
 
-    // Final prompt
-    const finalPrompt = `
-        Conversation History:
-        ${history}
+      const history = conversation.messages
+        .map((m) => `${m.role}: ${m.content}`)
+        .join("\n");
 
-        Web Results:
-        ${JSON.stringify(webResults)}
+      const prompt = `
+Conversation History:
+${history}
 
-        User Follow-up:
-        ${query}
-        `;
+Web Results:
+${JSON.stringify(webResults)}
 
-    // Stream AI response
-    const { textStream } = streamText({
-      model: google("/gemini-2.5-flash"),
+User Follow-up:
+${query}
+      `.trim();
 
-      system:
-        "You are a helpful AI assistant.",
+      const { textStream } = streamText({
+        model: google("gemini-2.5-flash"),
+        system: "You are a helpful AI assistant.",
+        prompt,
+      });
 
-      prompt: finalPrompt,
-    });
-    console.log(`Stream Text Answer ${streamText}`)
+      setSseHeaders(res);
+      res.setHeader("X-Conversation-Id", conversation.id);
 
-    res.setHeader(
-      "Content-Type",
-      "text/event-stream"
-    );
+      const finalAnswer = await pipeTextStream(textStream, res);
 
-    res.setHeader(
-      "Cache-Control",
-      "no-cache"
-    );
-    res.header("X-Conversation-Id",conversation.id)
+      res.write("\n<SOURCES>\n");
+      res.write(formatSources(webResults));
+      res.end();
 
-    let finalAnswer = "";
-
-    for await (const chunk of textStream) {
-      finalAnswer += chunk;
-
-      res.write(chunk);
+      await prisma.message.create({
+        data: { content: finalAnswer, role: "Assistant", conversationId },
+      });
+    } catch (error) {
+      if (res.headersSent) { res.end(); return; }
+      serverError(res, error);
     }
-
-    // Save assistant message
-    const finalAnswer_db = await prisma.message.create({
-      data: {
-        content: finalAnswer,
-        role: "Assistant",
-        conversationId,
-      },
-    });
-    console.log(`Final AnswerSaved : ${finalAnswer_db}`)
-
-    // Send sources
-    res.write("\n<SOURCES>\n");
-
-    res.write(
-      JSON.stringify(
-        webResults.map((r) => ({
-          title: r.title,
-          url: r.url,
-        }))
-      )
-    );
-
-    res.end();
-
-  } catch (error) {
-    console.error(error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Internal Server Error",
-    });
   }
+);
+
+// ─── Start ────────────────────────────────────────────────────────────────────
+
+app.listen(PORT, () => {
+  console.log(`Server listening on port ${PORT}`);
 });
-
-
-
-
-
-app.listen(port, () => {
-  console.log(`listening on port ${port}...`)
-})

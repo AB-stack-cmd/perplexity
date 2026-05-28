@@ -267,7 +267,7 @@ function NewThreadPanel({ onCreated }: { onCreated: (conv: Conversation) => void
             <div className="max-w-2xl mx-auto px-6 py-8 space-y-6 fade-up">
               {sources.length > 0 && (
                 <div className="flex flex-wrap gap-2">
-                  {sources.slice(0, 4).map((src, i) => (
+                  {sources.map((src, i) => (
                     <a key={i} href={src.url} target="_blank" rel="noopener noreferrer"
                       className="flex items-center gap-1.5 bg-[#1a1a1c] border border-zinc-800/60 rounded-lg px-2.5 py-1.5 hover:border-zinc-700 hover:bg-[#1e1e20] transition group max-w-[180px]">
                       <Favicon url={src.url} />

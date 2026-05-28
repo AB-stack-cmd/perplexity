@@ -2,96 +2,73 @@ import type { Request, Response, NextFunction } from "express";
 import { createSupabseClient } from "./lib/supabase/Client.ts";
 import prisma from "./db.ts";
 
+// ─── Request Augmentation ─────────────────────────────────────────────────────
+
 declare global {
   namespace Express {
     interface Request {
-      userId?: string;
+      userId?: string;    // Supabase UUID
+      dbUserId?: string;  // Internal Prisma user ID
     }
   }
 }
 
+// ─── Singleton Supabase client ────────────────────────────────────────────────
+
 const supabase = createSupabseClient();
+
+// ─── Middleware ───────────────────────────────────────────────────────────────
 
 export default async function Validation(
   req: Request,
   res: Response,
   next: NextFunction
-) {
+): Promise<void> {
   try {
-    // Authorization header
     const auth = req.headers.authorization;
 
-    console.log("AUTH HEADER:", auth?.split(" ")[1]);
-
-    // Validate header
-    if (!auth || !auth.startsWith("Bearer ")) {
-      return res.status(401).json({
-        success: false,
-        message: "No token provided",
-      });
+    if (!auth?.startsWith("Bearer ")) {
+      res.status(401).json({ success: false, message: "No token provided" });
+      return;
     }
 
-    // Extract token
     const token = auth.split(" ")[1];
 
-    // Validate token with Supabase
     const { data, error } = await supabase.auth.getUser(token);
 
-    // Invalid token
     if (error || !data.user) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid token",
-      });
+      res.status(401).json({ success: false, message: "Invalid token" });
+      return;
     }
 
-    const user = data.user;
+    const supabaseUser = data.user;
 
-    console.log("SUPABASE USER:", user);
-
-    // Attach userId to request
-    req.userId = user.id;
-
-    // if user exists
-    const existingUser = await prisma.user.findFirst({
-      where: {
-        supabaseId: user.id,
+    // Upsert: find or create the internal DB user in one query
+    const dbUser = await prisma.user.upsert({
+      where: { supabaseId: supabaseUser.id },
+      update: {},  // nothing to update on repeat visits
+      create: {
+        supabaseId: supabaseUser.id,
+        email: supabaseUser.email ?? "",
+        name:
+          supabaseUser.user_metadata?.full_name ??
+          supabaseUser.user_metadata?.name ??
+          "Unknown",
+        provider:
+          supabaseUser.app_metadata?.provider === "google" ? "Google" : "Github",
       },
     });
 
-    //  user if not exists
-    if (!existingUser) {
-      await prisma.user.create({
-        data: {
-          email: user.email || "",
-
-          provider:
-            user.app_metadata.provider === "google"
-              ? "Google"
-              : "Github",
-
-          name:
-            user.user_metadata.full_name ||
-            user.user_metadata.name ||
-            "Unknown",
-
-          supabaseId: user.id,
-        },
-      });
-
-      console.log("User created");
-    } else {
-      console.log("User already exists");
-    }
+    // Attach both IDs so routes never need to query for the user again
+    req.userId   = supabaseUser.id;  // Supabase UUID (kept for compatibility)
+    req.dbUserId = dbUser.id;        // Internal Prisma ID
 
     next();
-
-  } catch (error: any) {
-    console.error("VALIDATION ERROR:", error);
-
-    return res.status(500).json({
+  } catch (error: unknown) {
+    console.error("Validation middleware error:", error);
+    res.status(500).json({
       success: false,
-      message: error.message || "Internal Server Error",
+      message: error instanceof Error ? error.message : "Internal Server Error",
     });
   }
 }
