@@ -236,6 +236,7 @@ function MessageBubble({
   onFollowUp: (text: string) => void;
 }) {
   if (msg.role === "user") {
+    console.log(msg.content)
     return (
       <div className="flex justify-end">
         <div className="max-w-[78%] bg-[#1a1a1c] border border-zinc-800/60 rounded-2xl rounded-tr-sm px-4 py-3 text-[13.5px] text-zinc-100 leading-relaxed">
@@ -559,6 +560,8 @@ function ConversationPanel({ conversation }: { conversation: Conversation }) {
             followUps: [],
           })
         );
+        console.log(mapped)
+        console.log(mapped[0].content)
         setMessages(mapped);
       } catch {
         if (!cancelled) setError("Failed to load conversation history");

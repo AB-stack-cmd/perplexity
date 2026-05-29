@@ -278,6 +278,7 @@ ${query}
         system: "You are a helpful AI assistant.",
         prompt,
       });
+      console.log(`Text stream :${textStream}`)
 
       setSseHeaders(res);
       res.setHeader("X-Conversation-Id", conversation.id);
