@@ -25,23 +25,29 @@ export default async function Validation(
   next: NextFunction
 ): Promise<void> {
   try {
+    console.log(`res : ${req.body}`
+    )
     const auth = req.headers.authorization;
+    console.log(`auth : ${auth}`)
 
     if (!auth?.startsWith("Bearer ")) {
       res.status(401).json({ success: false, message: "No token provided" });
       return;
     }
 
-    const token = auth.split(" ")[1];
+    const token = auth.split(" ")[1]; // token split from jwt fetch from client
 
-    const { data, error } = await supabase.auth.getUser(token);
+    const { data:{user}, error } = await supabase.auth.getUser(token);
 
-    if (error || !data.user) {
+    if (error || !user) {
       res.status(401).json({ success: false, message: "Invalid token" });
       return;
     }
 
-    const supabaseUser = data.user;
+    const supabaseUser = user;
+    console.log(`supabase`)
+    console.log(supabase)
+    console.log("_________")
 
     // Upsert: find or create the internal DB user in one query
     const dbUser = await prisma.user.upsert({

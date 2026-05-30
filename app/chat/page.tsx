@@ -9,11 +9,12 @@ import {
 import { cn } from "@/lib/utils";
 import { createClient } from "../lib/supabase/client";
 import { useRouter } from "next/navigation";
-
+import { MoreHorizontal } from "lucide-react";
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 const supabase = createClient();
-const API = process.env.PORT; // env port
+const PORT = process.env.PORT
+const API = `http://localhost:4000`; // env port
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -751,13 +752,15 @@ export default function ChatPage() {
   useEffect(() => {
     (async () => {
       try {
-        const token = await getToken();
+        const token = await getToken();``
+        console.log(`token  ${token}`)
         const res   = await fetch(`${API}/conversation`, {
           headers: { Authorization: `Bearer ${token}` },
           credentials: "include",
         });
         if (!res.ok) throw new Error(`${res.status}`);
         const data = await res.json();
+        console.log(` data from server :${data}`)
         setConversations(data.conversations ?? []);
       } catch {
         // Not authenticated — redirect to login
@@ -830,7 +833,7 @@ export default function ChatPage() {
       {/* ── Sidebar toggle ── */}
       <button
         onClick={() => setSidebarOpen((v) => !v)}
-        className="fixed top-3.5 left-3.5 z-50 w-8 h-8 rounded-lg flex items-center justify-center text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.06] transition-all"
+        className={cn("fixed top-3.5 left-3.5 z-50 w-8 h-8 rounded-lg flex items-center justify-center text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.06] transition-all", sidebarOpen?"translate-x-[240px]" : "-translate-x-1")}
         title={sidebarOpen ? "Close sidebar" : "Open sidebar"}
       >
         {sidebarOpen ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
@@ -843,9 +846,6 @@ export default function ChatPage() {
       )}>
         {/* Logo */}
         <div className="h-14 px-4 flex items-center gap-2.5 shrink-0">
-          <div className="w-6 h-6 rounded-md bg-violet-600 flex items-center justify-center">
-            <Zap size={12} className="text-white" fill="white" />
-          </div>
           <span className="text-white text-[13px] font-semibold tracking-tight">Purplexity</span>
         </div>
 
@@ -906,7 +906,8 @@ export default function ChatPage() {
               >
                 <MessageSquare size={12} className="shrink-0 opacity-50" />
                 <p className="text-[12px] truncate flex-1 leading-tight">{conv.title}</p>
-              </button>
+                 <MoreHorizontal size={14} />
+              </button> 
             ))
           )}
         </div>
