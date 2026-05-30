@@ -236,7 +236,6 @@ function MessageBubble({
   onFollowUp: (text: string) => void;
 }) {
   if (msg.role === "user") {
-    console.log(msg.content)
     return (
       <div className="flex justify-end">
         <div className="max-w-[78%] bg-[#1a1a1c] border border-zinc-800/60 rounded-2xl rounded-tr-sm px-4 py-3 text-[13.5px] text-zinc-100 leading-relaxed">
@@ -421,7 +420,7 @@ function NewThreadPanel({ onCreated }: { onCreated: (conv: Conversation) => void
     setSources([]);
     setFollowUps([]);
 
-    //  First ask → /purplexity_ask ; subsequent → /purplexity/follow_up
+    // First ask → /purplexity_ask ; subsequent → /purplexity/follow_up
     const isFirst    = conversationId === null;
     const endpoint   = isFirst ? "/purplexity_ask"       : "/purplexity/follow_up";
     const body       = isFirst ? { query: trimmed }       : { conversationId, query: trimmed };
@@ -523,6 +522,25 @@ function NewThreadPanel({ onCreated }: { onCreated: (conv: Conversation) => void
 // Shown when clicking an existing thread. Loads history from the server, then
 // handles follow-up messages via /purplexity/follow_up.
 
+// ── Stored content parser ─────────────────────────────────────────────────────
+// /purplexity_ask uses Output.object so the DB stores raw JSON like:
+//   {"answer":"The actual text…","followUps":["Q1?","Q2?","Q3?"]}
+// /purplexity/follow_up stores plain text.
+// This helper handles both cases transparently.
+function parseStoredContent(role: string, raw: string): { content: string; followUps: string[] } {
+  if (role.toLowerCase() !== "assistant") return { content: raw, followUps: [] };
+  try {
+    const cleaned = raw.replace(/```json\n?|```/g, "").trim();
+    const obj = JSON.parse(cleaned);
+    return {
+      content:   typeof obj.answer    === "string" ? obj.answer                   : raw,
+      followUps: Array.isArray(obj.followUps)      ? obj.followUps.slice(0, 3)    : [],
+    };
+  } catch {
+    return { content: raw, followUps: [] }; // plain text — use as-is
+  }
+}
+
 function ConversationPanel({ conversation }: { conversation: Conversation }) {
   const [messages, setMessages]   = useState<Message[]>([]);
   const [query, setQuery]         = useState("");
@@ -532,12 +550,17 @@ function ConversationPanel({ conversation }: { conversation: Conversation }) {
   const [sources, setSources]     = useState<Source[]>([]);
   const [followUps, setFollowUps] = useState<string[]>([]);
 
-  // Load full message history when the panel mounts (or conv changes)
+  // Load full message history when the panel mounts or conversation changes
   useEffect(() => {
     let cancelled = false;
+
+    // Reset all state for the incoming conversation
     setLoading(true);
     setMessages([]);
     setSources([]);
+    setFollowUps([]);
+    setError(null);   // ← clears stale errors from previous threads
+    setQuery("");
 
     (async () => {
       try {
@@ -546,25 +569,27 @@ function ConversationPanel({ conversation }: { conversation: Conversation }) {
           headers: { Authorization: `Bearer ${token}` },
           credentials: "include",
         });
-        if (!res.ok) throw new Error(`${res.status}`);
+        if (!res.ok) throw new Error(`Server returned ${res.status}`);
         const data = await res.json();
-
         if (cancelled) return;
 
-        // DB stores role as "User" / "Assistant" — normalise to lowercase
-        const mapped: Message[] = (data.conversation.messages ?? []).map(
-          (m: { role: string; content: string }) => ({
-            role: m.role.toLowerCase() as "user" | "assistant",
-            content: m.content,
-            sources: [],
-            followUps: [],
-          })
+        // DB stores role as "User" / "Assistant" — normalise + parse content
+        const mapped: Message[] = (data.conversation?.messages ?? []).map(
+          (m: { role: string; content: string }) => {
+            const { content, followUps } = parseStoredContent(m.role, m.content);
+            return {
+              role:      m.role.toLowerCase() as "user" | "assistant",
+              content,
+              sources:   [],   // sources are not persisted to DB; sidebar still shows live ones
+              followUps,
+            };
+          }
         );
-        console.log(mapped)
-        console.log(mapped[0].content)
         setMessages(mapped);
-      } catch {
-        if (!cancelled) setError("Failed to load conversation history");
+      } catch (e) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Failed to load conversation");
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -611,7 +636,7 @@ function ConversationPanel({ conversation }: { conversation: Conversation }) {
           content: result.text,
           sources: result.sources,
           followUps: result.followUps,
-        };0
+        };
         return u;
       });
       setSources(result.sources);
@@ -626,14 +651,58 @@ function ConversationPanel({ conversation }: { conversation: Conversation }) {
 
   if (loading) {
     return (
+      <div className="flex h-full overflow-hidden">
+        <div className="flex-1 flex flex-col min-w-0">
+          <div className="h-12 px-6 border-b border-zinc-800/40 flex items-center shrink-0">
+            <p className="text-zinc-400 text-[12px] truncate">{conversation.title}</p>
+          </div>
+          {/* Shimmer skeleton — mirrors the real message layout */}
+          <div className="flex-1 overflow-y-auto thin-scroll">
+            <div className="max-w-2xl mx-auto px-6 py-8 space-y-10">
+              <div className="space-y-3">
+                <div className="flex gap-1.5">
+                  {[80, 120, 96].map((w, i) => (
+                    <div key={i} className="h-6 rounded-lg shimmer" style={{ width: w }} />
+                  ))}
+                </div>
+                <div className="space-y-2">
+                  {[100, 85, 95, 70].map((pct, i) => (
+                    <div key={i} className="h-3.5 rounded shimmer" style={{ width: `${pct}%` }} />
+                  ))}
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <div className="h-10 w-48 rounded-2xl shimmer" />
+              </div>
+              <div className="space-y-2">
+                {[100, 88, 76, 55].map((pct, i) => (
+                  <div key={i} className="h-3.5 rounded shimmer" style={{ width: `${pct}%` }} />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+        <SourceBar sources={[]} streaming={false} />
+      </div>
+    );
+  }
+
+  // Fetch failed — show inline error
+  if (error && messages.length === 0) {
+    return (
       <div className="flex flex-col h-full">
         <div className="h-12 px-6 border-b border-zinc-800/40 flex items-center shrink-0">
           <p className="text-zinc-400 text-[12px] truncate">{conversation.title}</p>
         </div>
         <div className="flex-1 flex items-center justify-center">
-          <div className="flex items-center gap-2.5 text-zinc-600">
-            <Loader2 size={14} className="animate-spin" />
-            <span className="text-[12px]">Loading conversation…</span>
+          <div className="text-center space-y-3">
+            <p className="text-zinc-500 text-[13px]">{error}</p>
+            <button
+              onClick={() => { setError(null); setLoading(true); }}
+              className="text-[12px] text-violet-400 hover:text-violet-300 transition-colors underline underline-offset-2"
+            >
+              Try again
+            </button>
           </div>
         </div>
       </div>
