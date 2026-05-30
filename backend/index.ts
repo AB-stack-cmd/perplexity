@@ -107,6 +107,7 @@ function serverError(res: Response, error: unknown): void {
  */
 app.get("/conversation", Validation, async (req: Request, res: Response) => {
   try {
+    console.log
     const conversations = await prisma.conversation.findMany({
       where: { userId: req.dbUserId },
       orderBy: { createdAt: "desc" },

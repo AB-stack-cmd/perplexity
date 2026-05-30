@@ -11,7 +11,7 @@ import { createClient } from "../lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { MoreHorizontal } from "lucide-react";
 import process from "process";
-
+import axios from "axios";
 console.log(process.env.
 NEXT_PUBLIC_BACKEND_URL);
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -402,7 +402,7 @@ function ThreadView({
         </div>
       </div>
 
-      <SourceBar sources={sources} streaming={streaming} />
+      {/* <SourceBar sources={sources} streaming={streaming} /> */}
     </div>
   );
 }
@@ -762,14 +762,16 @@ export default function ChatPage() {
   useEffect(() => {
     (async () => {
       try {
-        const token = await getToken();``
+        const token = await getToken();
+        console.log(`token ${token}`)
         const res   = await fetch(`${API}/conversation`, {
           headers: { Authorization: `Bearer ${token}` },
           credentials: "include",
         });
+        console.log(`res :${res.json}`)
         if (!res.ok) throw new Error(`${res.status}`);
         const data = await res.json();
-        console.log(` data from server :${data}`)
+        console.log(` data from server :${data.conversation}`)
         setConversations(data.conversations ?? []);
       } catch {
         // Not authenticated — redirect to login
@@ -917,7 +919,7 @@ export default function ChatPage() {
               >
                 <MessageSquare size={12} className="shrink-0 opacity-50" />
                 <p className="text-[12px] truncate flex-1 leading-tight">{conv.title}</p>
-                 <MoreHorizontal size={14} />
+                 <MoreHorizontal size={14}  onClick={(e)=> e.stopPropagation()} />
               </button> 
             ))
           )}
