@@ -171,7 +171,7 @@ app.post(
         data: {
           title: query.slice(0, 80),
           slug: slugify(query, { lower: true, strict: true }),
-          userId: req.dbUserId!, // ✅ already resolved by middleware — no extra DB call
+          userId: req.dbUserId!, //  already resolved by middleware — no extra DB call
           messages: { create: { content: query, role: "User" } },
         },
       });
@@ -263,14 +263,14 @@ app.post(
         .join("\n");
 
       const prompt = `
-Conversation History:
-${history}
+        Conversation History:
+        ${history}
 
-Web Results:
-${JSON.stringify(webResults)}
+        Web Results:
+        ${JSON.stringify(webResults)}
 
-User Follow-up:
-${query}
+        User Follow-up:
+        ${query}
       `.trim();
 
       const { textStream } = streamText({

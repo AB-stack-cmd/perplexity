@@ -421,7 +421,7 @@ function NewThreadPanel({ onCreated }: { onCreated: (conv: Conversation) => void
     setSources([]);
     setFollowUps([]);
 
-    // ✅ First ask → /purplexity_ask ; subsequent → /purplexity/follow_up
+    //  First ask → /purplexity_ask ; subsequent → /purplexity/follow_up
     const isFirst    = conversationId === null;
     const endpoint   = isFirst ? "/purplexity_ask"       : "/purplexity/follow_up";
     const body       = isFirst ? { query: trimmed }       : { conversationId, query: trimmed };
@@ -532,7 +532,7 @@ function ConversationPanel({ conversation }: { conversation: Conversation }) {
   const [sources, setSources]     = useState<Source[]>([]);
   const [followUps, setFollowUps] = useState<string[]>([]);
 
-  // ✅ Load full message history when the panel mounts (or conv changes)
+  // Load full message history when the panel mounts (or conv changes)
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -611,7 +611,7 @@ function ConversationPanel({ conversation }: { conversation: Conversation }) {
           content: result.text,
           sources: result.sources,
           followUps: result.followUps,
-        };
+        };0
         return u;
       });
       setSources(result.sources);
