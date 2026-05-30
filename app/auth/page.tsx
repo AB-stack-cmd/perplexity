@@ -23,6 +23,10 @@ export default function SignIn() {
     }
   },[]);
 
+  // async function f(params:type) {
+    // 
+  // }
+
   async function loginWithOAuth(provider: "github" | "google") {
     try {
       setLoading(provider);

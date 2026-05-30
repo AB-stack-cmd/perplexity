@@ -121,6 +121,7 @@ function Favicon({ url }: { url: string }) {
 // ─── Source Bar ───────────────────────────────────────────────────────────────
 
 function SourceBar({ sources, streaming }: { sources: Source[]; streaming: boolean }) {
+  console.log(sources.map((m,i)=>{console.log(i)}))
   return (
     <aside className="w-[220px] shrink-0 border-l border-zinc-800/40 flex flex-col bg-[#0c0c0d]">
       <div className="h-12 px-4 border-b border-zinc-800/40 flex items-center gap-2 shrink-0">
@@ -563,7 +564,7 @@ function ConversationPanel({ conversation }: { conversation: Conversation }) {
   const [error, setError]         = useState<string | null>(null);
   const [sources, setSources]     = useState<Source[]>([]);
   const [followUps, setFollowUps] = useState<string[]>([]);
-
+  
   
   // Load full message history when the panel mounts or conversation changes
   useEffect(() => {
