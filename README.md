@@ -196,5 +196,3 @@ Route handler → uses req.dbUserId for all DB queries (no extra lookup)
 **Middleware upserts the DB user** — The middleware uses `prisma.user.upsert` instead of `findFirst` + conditional `create`. One round-trip instead of two, atomic, and the result is attached directly to the request so routes never need to look up the user themselves.
 
 **`Output.object` schema on first ask** — The first query uses Vercel AI SDK's `Output.object` to force Gemini to respond with `{ answer, followUps }` JSON. Follow-up responses are plain text. `buildStoredContent` wraps both into the same envelope shape before saving so the client's `parseStoredContent` never needs to branch on route type.
-EOF
-echo "README done"

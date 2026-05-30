@@ -13,7 +13,7 @@ import { useRouter } from "next/navigation";
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 const supabase = createClient();
-const API = "http://localhost:4000";
+const API = process.env.PORT; // env port
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
