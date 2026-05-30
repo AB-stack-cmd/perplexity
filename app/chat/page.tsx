@@ -420,7 +420,7 @@ function NewThreadPanel({ onCreated }: { onCreated: (conv: Conversation) => void
     setSources([]);
     setFollowUps([]);
 
-    // First ask → /purplexity_ask ; subsequent → /purplexity/follow_up
+    // ✅ First ask → /purplexity_ask ; subsequent → /purplexity/follow_up
     const isFirst    = conversationId === null;
     const endpoint   = isFirst ? "/purplexity_ask"       : "/purplexity/follow_up";
     const body       = isFirst ? { query: trimmed }       : { conversationId, query: trimmed };
@@ -527,17 +527,23 @@ function NewThreadPanel({ onCreated }: { onCreated: (conv: Conversation) => void
 //   {"answer":"The actual text…","followUps":["Q1?","Q2?","Q3?"]}
 // /purplexity/follow_up stores plain text.
 // This helper handles both cases transparently.
-function parseStoredContent(role: string, raw: string): { content: string; followUps: string[] } {
-  if (role.toLowerCase() !== "assistant") return { content: raw, followUps: [] };
+function parseStoredContent(
+  role: string,
+  raw: string
+): { content: string; followUps: string[]; sources: Source[] } {
+  if (role.toLowerCase() !== "assistant") {
+    return { content: raw, followUps: [], sources: [] };
+  }
   try {
     const cleaned = raw.replace(/```json\n?|```/g, "").trim();
     const obj = JSON.parse(cleaned);
     return {
-      content:   typeof obj.answer    === "string" ? obj.answer                   : raw,
-      followUps: Array.isArray(obj.followUps)      ? obj.followUps.slice(0, 3)    : [],
+      content:   typeof obj.answer    === "string" ? obj.answer                : raw,
+      followUps: Array.isArray(obj.followUps)      ? obj.followUps.slice(0, 3) : [],
+      sources:   Array.isArray(obj.sources)         ? obj.sources               : [],
     };
   } catch {
-    return { content: raw, followUps: [] }; // plain text — use as-is
+    return { content: raw, followUps: [], sources: [] }; // plain text — use as-is
   }
 }
 
@@ -573,19 +579,26 @@ function ConversationPanel({ conversation }: { conversation: Conversation }) {
         const data = await res.json();
         if (cancelled) return;
 
-        // DB stores role as "User" / "Assistant" — normalise + parse content
+        // DB stores role as "User" / "Assistant" — normalise + parse content + sources
         const mapped: Message[] = (data.conversation?.messages ?? []).map(
           (m: { role: string; content: string }) => {
-            const { content, followUps } = parseStoredContent(m.role, m.content);
+            const { content, followUps, sources } = parseStoredContent(m.role, m.content);
             return {
-              role:      m.role.toLowerCase() as "user" | "assistant",
+              role: m.role.toLowerCase() as "user" | "assistant",
               content,
-              sources:   [],   // sources are not persisted to DB; sidebar still shows live ones
+              sources,
               followUps,
             };
           }
         );
         setMessages(mapped);
+
+        // Pre-populate the source bar with sources from the last assistant message
+        // so the right panel isn't empty when revisiting a thread.
+        const lastAssistant = [...mapped].reverse().find((m) => m.role === "assistant");
+        if (lastAssistant?.sources?.length) {
+          setSources(lastAssistant.sources);
+        }
       } catch (e) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : "Failed to load conversation");

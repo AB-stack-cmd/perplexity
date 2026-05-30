@@ -57,9 +57,34 @@ async function pipeTextStream(
   return full;
 }
 
-/** Serialises web results into a source-list JSON string. */
+/** Serialises web results into a source-list JSON string (sent over the wire). */
 function formatSources(results: Array<{ url: string; title: string }>): string {
   return JSON.stringify(results.map(({ url, title }) => ({ url, title })));
+}
+
+/**
+ * Builds the string to persist in the DB for an assistant message.
+ *
+ * Both routes now store a canonical JSON envelope so the frontend can
+ * always recover answer, followUps, AND sources from history:
+ *
+ *   { "answer": "...", "followUps": [...], "sources": [{url, title}, ...] }
+ *
+ * - /purplexity_ask  → rawText is already JSON from Output.object  → spread + add sources
+ * - /purplexity/follow_up → rawText is plain text                  → wrap into envelope
+ */
+function buildStoredContent(
+  rawText: string,
+  webResults: Array<{ url: string; title: string }>
+): string {
+  const sources = webResults.map(({ url, title }) => ({ url, title }));
+  try {
+    const obj = JSON.parse(rawText.replace(/```json\n?|```/g, "").trim());
+    return JSON.stringify({ ...obj, sources });
+  } catch {
+    // plain-text follow-up — wrap consistently so the client never needs to branch
+    return JSON.stringify({ answer: rawText, followUps: [], sources });
+  }
 }
 
 /** Unified 500 handler — hides internals in production. */
@@ -200,10 +225,12 @@ app.post(
       res.write(formatSources(webResults));
       res.end();
 
-      // Persist after stream ends so the client isn't blocked
+      // Persist after stream ends so the client isn't blocked.
+      // buildStoredContent embeds sources into the JSON envelope so history
+      // can restore them without a separate DB column or API call.
       await prisma.message.create({
         data: {
-          content: assistantText,
+          content: buildStoredContent(assistantText, webResults),
           role: "Assistant",
           conversationId: conversation.id,
         },
@@ -263,14 +290,14 @@ app.post(
         .join("\n");
 
       const prompt = `
-        Conversation History:
-        ${history}
+Conversation History:
+${history}
 
-        Web Results:
-        ${JSON.stringify(webResults)}
+Web Results:
+${JSON.stringify(webResults)}
 
-        User Follow-up:
-        ${query}
+User Follow-up:
+${query}
       `.trim();
 
       const { textStream } = streamText({
@@ -278,7 +305,6 @@ app.post(
         system: "You are a helpful AI assistant.",
         prompt,
       });
-      console.log(`Text stream :${textStream}`)
 
       setSseHeaders(res);
       res.setHeader("X-Conversation-Id", conversation.id);
@@ -290,7 +316,11 @@ app.post(
       res.end();
 
       await prisma.message.create({
-        data: { content: finalAnswer, role: "Assistant", conversationId },
+        data: {
+          content: buildStoredContent(finalAnswer, webResults),
+          role: "Assistant",
+          conversationId,
+        },
       });
     } catch (error) {
       if (res.headersSent) { res.end(); return; }
