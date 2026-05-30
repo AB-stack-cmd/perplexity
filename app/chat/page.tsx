@@ -10,11 +10,18 @@ import { cn } from "@/lib/utils";
 import { createClient } from "../lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { MoreHorizontal } from "lucide-react";
+import process from "process";
+
+console.log(process.env.
+NEXT_PUBLIC_BACKEND_URL);
 // ─── Config ───────────────────────────────────────────────────────────────────
 
+
 const supabase = createClient();
-const PORT = process.env.PORT
-const API = `http://localhost:4000`; // env port
+const PORT = process.env.
+NEXT_PUBLIC_BACKEND_URL
+console.log(`PORT :${PORT}`) //check port
+const API = "http://localhost:4000"// env port
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -557,6 +564,7 @@ function ConversationPanel({ conversation }: { conversation: Conversation }) {
   const [sources, setSources]     = useState<Source[]>([]);
   const [followUps, setFollowUps] = useState<string[]>([]);
 
+  
   // Load full message history when the panel mounts or conversation changes
   useEffect(() => {
     let cancelled = false;
@@ -592,6 +600,7 @@ function ConversationPanel({ conversation }: { conversation: Conversation }) {
             };
           }
         );
+        console.log(`Previous conversations Mapped ${mapped.map((msg , i)=>{console.log(`msg ${msg.sources}`)})}`)
         setMessages(mapped);
 
         // Pre-populate the source bar with sources from the last assistant message
@@ -753,7 +762,6 @@ export default function ChatPage() {
     (async () => {
       try {
         const token = await getToken();``
-        console.log(`token  ${token}`)
         const res   = await fetch(`${API}/conversation`, {
           headers: { Authorization: `Bearer ${token}` },
           credentials: "include",
@@ -833,7 +841,7 @@ export default function ChatPage() {
       {/* ── Sidebar toggle ── */}
       <button
         onClick={() => setSidebarOpen((v) => !v)}
-        className={cn("fixed top-3.5 left-3.5 z-50 w-8 h-8 rounded-lg flex items-center justify-center text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.06] transition-all", sidebarOpen?"translate-x-[240px]" : "-translate-x-1")}
+        className={cn("fixed top-6.5 left-5.5 z-50 w-8 h-8 rounded-lg flex items-center justify-center text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.06] transition-all", sidebarOpen?"translate-x-[220px]" : "-translate-x-1")}
         title={sidebarOpen ? "Close sidebar" : "Open sidebar"}
       >
         {sidebarOpen ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
@@ -881,7 +889,9 @@ export default function ChatPage() {
           </p>
         </div>
 
-        {/* Conversation list */}
+        /*
+        show skeleton structured 
+        */
         <div className="flex-1 overflow-y-auto px-2 pb-4 thin-scroll space-y-0.5">
           {loadingConvs ? (
             <div className="space-y-1.5 px-1 pt-1">
