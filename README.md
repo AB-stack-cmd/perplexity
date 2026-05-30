@@ -24,14 +24,13 @@ A full-stack AI-powered search and chat application. Ask anything — it searche
 
 ```
 ├── Perplexity/                  # Next.js frontend
-│   └── app/
-│       ├── page.tsx    
-|        ├── auth/
-|        |   └──chat/  
-|        |       └── page.tsx # Root chat UI (all components live here)
-│        └── lib/
-│            └── supabase/
-│                └── client.ts
+│   ├── app/
+|   |    ├──page.tsx
+|   |    └──chat/  
+|   |       └── page.tsx # Root chat UI (all components live here)
+│   └── lib/
+│        └── supabase/
+│             └── client.ts
 │
 ├── server/                  # Express backend
 │   ├── server.ts            # All routes + helpers
