@@ -9,12 +9,32 @@ const router = express()
 
 router.delete("/delete" ,  Validation , async(res:Response,req:Request)=>{
     try{
-        const conversation = await prisma.conversation.findFirst()
+         const { conversationId } = req.params;
 
-    }catch(e){
-        res.json({
-            Message : "unable to delete conversation",
-            error : e
-        })
-    }
+        const conversation = await prisma.conversation.findFirst({
+            where :{id : req.dbUserId , userId:req.userId}
+        });
+
+        if (!conversation) {
+            return res.status(404).json({
+                success: false,
+                message: "Conversation not found",
+                });
+        };
+
+        await prisma.conversation.delete({
+            where :{id:req.dbUserId}
+        });
+
+        return res.status(200).json({
+        success: true,
+        message: "Conversation deleted successfully",
+        conversationId,
+      });
+        }catch(e){
+            res.json({
+                Message : "unable to delete conversation",
+                error : e
+            })
+        }
 })

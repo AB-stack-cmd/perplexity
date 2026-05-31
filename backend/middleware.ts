@@ -67,7 +67,8 @@ export default async function Validation(
 
     // Attach both IDs so routes never need to query for the user again
     req.userId   = supabaseUser.id;  // Supabase UUID (kept for compatibility)
-    req.dbUserId = dbUser.id;        // Internal Prisma ID
+    req.dbUserId = dbUser.id;        // Prisma ID
+
 
     next();
   } catch (error: unknown) {
