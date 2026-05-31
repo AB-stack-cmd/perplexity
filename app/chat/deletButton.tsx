@@ -1,0 +1,85 @@
+"use client";
+
+import { Trash2 } from "lucide-react";
+import { createClient } from "../lib/supabase/client";
+
+const supabase = createClient();
+const API =
+  process.env.NEXT_PUBLIC_BACKEND_URL ??
+  "http://localhost:4000";
+
+interface DeleteConversationButtonProps {
+  conversationId: string;
+
+  onDeleted?: (conversationId: string) => void;
+}
+
+export default function DeleteConversationButton({
+  conversationId,
+  onDeleted,
+}: DeleteConversationButtonProps) {
+  const handleDelete = async (
+    e: React.MouseEvent
+  ) => {
+    e.stopPropagation();
+
+    const confirmed = window.confirm(
+      "Delete this conversation?"
+    );
+
+    if (!confirmed) return;
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        throw new Error("Not authenticated");
+      }
+
+      const res = await fetch(
+        `${API}/conversation/${conversationId}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          credentials: "include",
+        }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(
+          data.message ??
+            "Failed to delete conversation"
+        );
+      }
+
+      onDeleted?.(conversationId);
+    } catch (error) {
+      console.error(error);
+      alert("Failed to delete conversation");
+    }
+  };
+
+  return (
+    <button
+      onClick={handleDelete}
+      className="
+        opacity-0
+        group-hover:opacity-100
+        transition-all
+        text-zinc-600
+        hover:text-red-500
+        p-1
+        rounded-md
+      "
+      title="Delete conversation"
+    >
+      <Trash2 size={14} />
+    </button>
+  );
+}

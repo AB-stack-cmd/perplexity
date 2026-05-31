@@ -7,7 +7,7 @@ import cors from "cors";
 import * as z from "zod";
 import slugify from "slugify";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-
+import ConvRemove from "./api/conversationRemove.ts";
 import { PROMPT_TEMPLATE, SYSTEM_PROMT } from "./prompts.ts";
 import prisma from "./db.ts";
 import Validation from "./middleware.ts";
@@ -335,6 +335,8 @@ app.post(
     }
   }
 );
+
+app.use("/conversation" , ConvRemove);
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 
