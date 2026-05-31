@@ -1,34 +1,44 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Search, MessageSquare, Plus, Loader2,
   PanelLeftClose, PanelLeftOpen, Send, Globe,
-  Sparkles, ExternalLink, ArrowRight, Zap,
+  Sparkles, ExternalLink, ArrowRight, Zap, MoreHorizontal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "../lib/supabase/client";
 import { useRouter } from "next/navigation";
-import { MoreHorizontal } from "lucide-react";
-import process from "process";
-import axios from "axios";
-console.log(process.env.
-NEXT_PUBLIC_BACKEND_URL);
+
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-
 const supabase = createClient();
-const PORT = process.env.
-NEXT_PUBLIC_BACKEND_URL
-console.log(`PORT :${PORT}`) //check port
-const API = "http://localhost:4000"// env port
+const API      = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:4000";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface Conversation { id: string; title: string; slug: string; createdAt: string; }
-interface Source      { title: string; url: string; }
-interface Message     { role: "user" | "assistant"; content: string; sources?: Source[]; followUps?: string[]; }
-interface StreamResult{ text: string; sources: Source[]; followUps: string[]; conversationId: string | null; }
+interface Conversation {
+  id: string; title: string; slug: string; createdAt: string;
+}
+
+interface Source {
+  url: string; title: string;
+}
+
+interface Message {
+  role:                "user" | "assistant";
+  content:             string;
+  sources?:            Source[];
+  followUps?:          string[];
+  sourcesUnavailable?: boolean;
+}
+
+interface StreamResult {
+  text:           string;
+  sources:        Source[];
+  followUps:      string[];
+  conversationId: string | null;
+}
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -38,58 +48,75 @@ async function getToken(): Promise<string> {
   return session.access_token;
 }
 
-// ─── Stream Utility ───────────────────────────────────────────────────────────
-// Single shared function for both /purplexity_ask and /purplexity/follow_up
+// ─── Stream utility ───────────────────────────────────────────────────────────
+//
+// Single shared function for both /purplexity_ask and /purplexity/follow_up.
+// Differences between the two routes are passed as parameters:
+//   endpoint  — the URL path
+//   body      — the POST body
+//   delimiter — "\n<SOURCE>\n" (first ask) | "\n<SOURCES>\n" (follow-up)
 
 async function streamQuery(
-  endpoint: string,
-  body: object,
-  token: string,
+  endpoint:  string,
+  body:      object,
+  token:     string,
   delimiter: string,
-  onChunk: (text: string) => void,
+  onChunk:   (text: string) => void,
 ): Promise<StreamResult> {
   const res = await fetch(`${API}${endpoint}`, {
-    method: "POST",
+    method:  "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     credentials: "include",
-    body: JSON.stringify(body),
+    body:    JSON.stringify(body),
   });
 
   if (!res.ok) throw new Error(`Server error ${res.status}`);
+  if (!res.body) throw new Error("Response body is empty");
 
   const conversationId = res.headers.get("X-Conversation-Id");
-  const reader = res.body!.getReader();
+  const reader  = res.body.getReader();
   const decoder = new TextDecoder();
-  let buffer = "";
-  let answerText = "";
+
+  let buffer      = "";
+  let answerText  = "";
   let sourcesFound = false;
 
+  // eslint-disable-next-line no-constant-condition
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
+
     buffer += decoder.decode(value, { stream: true });
 
-    if (!sourcesFound && buffer.includes(delimiter)) {
-      [answerText] = buffer.split(delimiter);
-      sourcesFound = true;
-    } else if (!sourcesFound) {
-      answerText = buffer;
+    if (!sourcesFound) {
+      if (buffer.includes(delimiter)) {
+        // Delimiter arrived — lock in the answer and stop updating the UI.
+        answerText   = buffer.split(delimiter)[0];
+        sourcesFound = true;
+        onChunk(answerText);   // final UI update before sources render
+      } else {
+        // Still streaming answer text — update the UI on every chunk.
+        answerText = buffer;
+        onChunk(answerText);
+      }
     }
-    onChunk(answerText);
+    // Once sourcesFound is true we don't call onChunk again — answer is finalised.
   }
 
-  // Parse sources
+  // Parse sources from the trailer that follows the delimiter.
   let sources: Source[] = [];
   try {
-    const raw = buffer.split(delimiter)[1]?.trim() ?? "[]";
-    sources = JSON.parse(raw);
-  } catch { /* empty — leave as [] */ }
+    const raw    = buffer.split(delimiter)[1]?.trim() ?? "[]";
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) sources = parsed as Source[];
+  } catch { /* leave as [] */ }
 
-  // Unwrap structured JSON output { answer, followUps }
+  // Unwrap Output.object JSON envelope { answer, followUps } if present.
+  // /purplexity_ask streams structured JSON; /purplexity/follow_up streams plain text.
   let followUps: string[] = [];
   try {
     const cleaned = answerText.replace(/```json\n?|```/g, "").trim();
-    const obj = JSON.parse(cleaned);
+    const obj     = JSON.parse(cleaned);
     if (Array.isArray(obj.followUps)) followUps = obj.followUps.slice(0, 3);
     if (typeof obj.answer === "string") answerText = obj.answer;
   } catch { /* plain text — fine */ }
@@ -97,7 +124,45 @@ async function streamQuery(
   return { text: answerText, sources, followUps, conversationId };
 }
 
-// ─── Small Utilities ──────────────────────────────────────────────────────────
+// ─── Stored content parser ────────────────────────────────────────────────────
+//
+// The server stores every assistant message as a canonical JSON envelope:
+//   { "answer": "...", "followUps": [...], "sources": [{url, title}, ...] }
+//
+// This function recovers all three fields from any message loaded from the DB,
+// and also flags messages that pre-date source persistence (sourcesUnavailable).
+
+function parseStoredContent(role: string, raw: string): {
+  content:            string;
+  followUps:          string[];
+  sources:            Source[];
+  sourcesUnavailable: boolean;
+} {
+  const fallback = { content: raw, followUps: [], sources: [], sourcesUnavailable: false };
+
+  if (role.toLowerCase() !== "assistant") return fallback;
+
+  try {
+    const obj = JSON.parse(raw.replace(/```json\n?|```/g, "").trim());
+
+    const sourcesKeyPresent = "sources" in obj;                          // stored after the fix
+    const sources: Source[] = (Array.isArray(obj.sources) && obj.sources.length > 0)
+      ? (obj.sources as Source[])
+      : [];
+
+    return {
+      content:            typeof obj.answer    === "string" ? obj.answer                : raw,
+      followUps:          Array.isArray(obj.followUps)      ? obj.followUps.slice(0, 3) : [],
+      sources,
+      sourcesUnavailable: !sourcesKeyPresent,  // key absent → message predates sources
+    };
+  } catch {
+    // Not JSON at all — legacy plain-text message.
+    return { ...fallback, sourcesUnavailable: true };
+  }
+}
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
 
 function getHostname(url: string): string {
   try { return new URL(url).hostname.replace("www.", ""); }
@@ -120,22 +185,37 @@ function Favicon({ url }: { url: string }) {
 
 // ─── Source Bar ───────────────────────────────────────────────────────────────
 
-function SourceBar({ sources, streaming }: { sources: Source[]; streaming: boolean }) {
-  console.log(sources.map((m,i)=>{console.log(i)}))
+function SourceBar({
+  sources,
+  streaming,
+  historical = false,
+}: {
+  sources:     Source[];
+  streaming:   boolean;
+  /** true when sources were loaded from DB history rather than a live stream */
+  historical?: boolean;
+}) {
   return (
     <aside className="w-[220px] shrink-0 border-l border-zinc-800/40 flex flex-col bg-[#0c0c0d]">
+      {/* Header */}
       <div className="h-12 px-4 border-b border-zinc-800/40 flex items-center gap-2 shrink-0">
         <Globe size={12} className="text-zinc-600" />
         <p className="text-zinc-500 text-[11px] font-medium">Sources</p>
         {streaming ? (
           <Loader2 size={10} className="animate-spin text-violet-500 ml-auto" />
         ) : sources.length > 0 ? (
-          <span className="ml-auto text-[10px] bg-zinc-900 border border-zinc-800 text-zinc-500 px-1.5 py-0.5 rounded-full tabular-nums">
-            {sources.length}
+          <span className="ml-auto flex items-center gap-1.5">
+            {historical && (
+              <span className="text-[9px] text-zinc-700 italic">prev</span>
+            )}
+            <span className="text-[10px] bg-zinc-900 border border-zinc-800 text-zinc-500 px-1.5 py-0.5 rounded-full tabular-nums">
+              {sources.length}
+            </span>
           </span>
         ) : null}
       </div>
 
+      {/* List */}
       <div className="flex-1 overflow-y-auto thin-scroll px-2.5 py-3 space-y-1.5">
         {sources.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-32 text-center px-3 gap-2.5">
@@ -143,7 +223,9 @@ function SourceBar({ sources, streaming }: { sources: Source[]; streaming: boole
               <Globe size={14} className="text-zinc-700" />
             </div>
             <p className="text-zinc-700 text-[10px] leading-relaxed">
-              Sources appear after a response
+              {historical
+                ? "Sources weren't saved for this thread"
+                : "Sources appear after a response"}
             </p>
           </div>
         ) : (
@@ -158,7 +240,9 @@ function SourceBar({ sources, streaming }: { sources: Source[]; streaming: boole
                 className="flex flex-col gap-1.5 bg-[#111112] border border-zinc-800/50 rounded-xl px-3 py-2.5 hover:border-zinc-700/70 hover:bg-[#161617] transition-all group fade-up"
               >
                 <div className="flex items-start gap-1.5">
-                  <span className="text-[9px] text-zinc-700 font-medium tabular-nums mt-0.5 w-3 shrink-0">{i + 1}</span>
+                  <span className="text-[9px] text-zinc-700 font-medium tabular-nums mt-0.5 w-3 shrink-0">
+                    {i + 1}
+                  </span>
                   <Favicon url={src.url} />
                   <p className="text-[11px] text-zinc-300 leading-[1.35] line-clamp-2 group-hover:text-white transition-colors flex-1">
                     {src.title || host}
@@ -180,13 +264,13 @@ function SourceBar({ sources, streaming }: { sources: Source[]; streaming: boole
 // ─── Query Input ──────────────────────────────────────────────────────────────
 
 interface QueryInputProps {
-  value: string;
-  onChange: (v: string) => void;
-  onSubmit: () => void;
-  streaming: boolean;
+  value:        string;
+  onChange:     (v: string) => void;
+  onSubmit:     () => void;
+  streaming:    boolean;
   placeholder?: string;
-  autoFocus?: boolean;
-  className?: string;
+  autoFocus?:   boolean;
+  className?:   string;
 }
 
 function QueryInput({
@@ -239,9 +323,9 @@ function QueryInput({
 function MessageBubble({
   msg, isLast, streaming, onFollowUp,
 }: {
-  msg: Message;
-  isLast: boolean;
-  streaming: boolean;
+  msg:        Message;
+  isLast:     boolean;
+  streaming:  boolean;
   onFollowUp: (text: string) => void;
 }) {
   if (msg.role === "user") {
@@ -254,12 +338,14 @@ function MessageBubble({
     );
   }
 
+  const hasSources = msg.sources && msg.sources.length > 0;
+
   return (
     <div className="space-y-4">
-      {/* Inline source chips */}
-      {msg.sources && msg.sources.length > 0 && (
+      {/* Inline source chips — only when sources are available */}
+      {hasSources && (
         <div className="flex flex-wrap gap-2">
-          {msg.sources.slice(0, 4).map((src, i) => (
+          {msg.sources!.slice(0, 4).map((src, i) => (
             <a
               key={i}
               href={src.url}
@@ -273,9 +359,9 @@ function MessageBubble({
               </span>
             </a>
           ))}
-          {msg.sources.length > 4 && (
+          {msg.sources!.length > 4 && (
             <span className="text-[11px] text-zinc-600 self-center px-1">
-              +{msg.sources.length - 4} more
+              +{msg.sources!.length - 4} more
             </span>
           )}
         </div>
@@ -308,7 +394,9 @@ function MessageBubble({
               onClick={() => onFollowUp(fu)}
               className="chip-hover w-full flex items-center justify-between gap-3 bg-[#141415] border border-zinc-800/60 rounded-xl px-4 py-2.5 text-left group transition-all"
             >
-              <span className="text-[12.5px] text-zinc-400 group-hover:text-zinc-200 transition-colors leading-snug">{fu}</span>
+              <span className="text-[12.5px] text-zinc-400 group-hover:text-zinc-200 transition-colors leading-snug">
+                {fu}
+              </span>
               <ArrowRight size={12} className="text-zinc-700 group-hover:text-zinc-400 shrink-0 transition-colors" />
             </button>
           ))}
@@ -319,22 +407,24 @@ function MessageBubble({
 }
 
 // ─── Thread View ──────────────────────────────────────────────────────────────
-// Shared layout for both NewThreadPanel (result mode) and ConversationPanel.
+// Pure layout component — owns no state, no API calls.
 
 interface ThreadViewProps {
-  title: string;
-  messages: Message[];
-  query: string;
-  streaming: boolean;
-  error: string | null;
-  sources: Source[];
-  followUps: string[];
-  onQuery: (text: string) => void;
+  title:         string;
+  messages:      Message[];
+  query:         string;
+  streaming:     boolean;
+  error:         string | null;
+  sources:       Source[];
+  followUps:     string[];
+  historical?:   boolean;
+  onQuery:       (text: string) => void;
   onChangeQuery: (v: string) => void;
 }
 
 function ThreadView({
-  title, messages, query, streaming, error, sources, followUps, onQuery, onChangeQuery,
+  title, messages, query, streaming, error, sources, followUps,
+  historical = false, onQuery, onChangeQuery,
 }: ThreadViewProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -344,14 +434,13 @@ function ThreadView({
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* Messages + input */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
         <div className="h-12 px-6 border-b border-zinc-800/40 flex items-center shrink-0">
           <p className="text-zinc-400 text-[12px] truncate">{title || "New thread"}</p>
         </div>
 
-        {/* Scroll area */}
+        {/* Messages */}
         <div className="flex-1 overflow-y-auto thin-scroll">
           <div className="max-w-2xl mx-auto px-6 py-8 space-y-10">
             {messages.map((msg, i) => (
@@ -373,10 +462,9 @@ function ThreadView({
           </div>
         </div>
 
-        {/* Input bar */}
+        {/* Input */}
         <div className="shrink-0 px-6 py-4 border-t border-zinc-800/40">
           <div className="max-w-2xl mx-auto">
-            {/* Follow-up chips */}
             {followUps.length > 0 && !streaming && (
               <div className="flex flex-wrap gap-1.5 mb-3">
                 {followUps.map((fu, i) => (
@@ -402,42 +490,85 @@ function ThreadView({
         </div>
       </div>
 
-      {/* <SourceBar sources={sources} streaming={streaming} /> */}
+      <SourceBar sources={sources} streaming={streaming} historical={historical} />
+    </div>
+  );
+}
+
+// ─── Shimmer Skeleton ─────────────────────────────────────────────────────────
+// Shared between ConversationPanel and future loading states.
+
+function ConversationSkeleton({ title }: { title: string }) {
+  return (
+    <div className="flex h-full overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0">
+        <div className="h-12 px-6 border-b border-zinc-800/40 flex items-center shrink-0">
+          <p className="text-zinc-400 text-[12px] truncate">{title}</p>
+        </div>
+        <div className="flex-1 overflow-y-auto thin-scroll">
+          <div className="max-w-2xl mx-auto px-6 py-8 space-y-10">
+            {/* Assistant skeleton */}
+            <div className="space-y-3">
+              <div className="flex gap-1.5">
+                {[80, 120, 96].map((w, i) => (
+                  <div key={i} className="h-6 rounded-lg shimmer" style={{ width: w }} />
+                ))}
+              </div>
+              <div className="space-y-2">
+                {[100, 85, 95, 70].map((pct, i) => (
+                  <div key={i} className="h-3.5 rounded shimmer" style={{ width: `${pct}%` }} />
+                ))}
+              </div>
+            </div>
+            {/* User skeleton */}
+            <div className="flex justify-end">
+              <div className="h-10 w-48 rounded-2xl shimmer" />
+            </div>
+            {/* Assistant skeleton 2 */}
+            <div className="space-y-2">
+              {[100, 88, 76, 55].map((pct, i) => (
+                <div key={i} className="h-3.5 rounded shimmer" style={{ width: `${pct}%` }} />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+      <SourceBar sources={[]} streaming={false} />
     </div>
   );
 }
 
 // ─── New Thread Panel ─────────────────────────────────────────────────────────
-// Handles the very first ask (/purplexity_ask) and all follow-ups within the
-// same session (/purplexity/follow_up). Never calls /purplexity_ask twice.
+// Handles the first ask (/purplexity_ask) and all in-session follow-ups
+// (/purplexity/follow_up) without ever calling /purplexity_ask twice.
 
 function NewThreadPanel({ onCreated }: { onCreated: (conv: Conversation) => void }) {
-  const [query, setQuery]           = useState("");
-  const [messages, setMessages]     = useState<Message[]>([]);
-  const [streaming, setStreaming]   = useState(false);
-  const [error, setError]           = useState<string | null>(null);
-  const [sources, setSources]       = useState<Source[]>([]);
-  const [followUps, setFollowUps]   = useState<string[]>([]);
-  // Tracks the conversation created by the first ask
-  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [query, setQuery]                         = useState("");
+  const [messages, setMessages]                   = useState<Message[]>([]);
+  const [streaming, setStreaming]                 = useState(false);
+  const [error, setError]                         = useState<string | null>(null);
+  const [sources, setSources]                     = useState<Source[]>([]);
+  const [followUps, setFollowUps]                 = useState<string[]>([]);
+  const [conversationId, setConversationId]       = useState<string | null>(null);
 
-  const handleQuery = async (text: string) => {
+  const handleQuery = useCallback(async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || streaming) return;
+
     setQuery("");
     setError(null);
     setSources([]);
     setFollowUps([]);
 
-    // ✅ First ask → /purplexity_ask ; subsequent → /purplexity/follow_up
-    const isFirst    = conversationId === null;
-    const endpoint   = isFirst ? "/purplexity_ask"       : "/purplexity/follow_up";
-    const body       = isFirst ? { query: trimmed }       : { conversationId, query: trimmed };
-    const delimiter  = isFirst ? "\n<SOURCE>\n"           : "\n<SOURCES>\n";
+    // First ask → /purplexity_ask; all subsequent → /purplexity/follow_up
+    const isFirst   = conversationId === null;
+    const endpoint  = isFirst ? "/purplexity_ask"  : "/purplexity/follow_up";
+    const body      = isFirst ? { query: trimmed } : { conversationId, query: trimmed };
+    const delimiter = isFirst ? "\n<SOURCE>\n"     : "\n<SOURCES>\n";
 
     setMessages((prev) => [
       ...prev,
-      { role: "user", content: trimmed },
+      { role: "user",      content: trimmed },
       { role: "assistant", content: "", sources: [] },
     ]);
     setStreaming(true);
@@ -446,43 +577,42 @@ function NewThreadPanel({ onCreated }: { onCreated: (conv: Conversation) => void
       const token  = await getToken();
       const result = await streamQuery(endpoint, body, token, delimiter, (chunk) => {
         setMessages((prev) => {
-          const u = [...prev];
-          u[u.length - 1] = { ...u[u.length - 1], content: chunk };
-          return u;
+          const updated          = [...prev];
+          updated[updated.length - 1] = { ...updated[updated.length - 1], content: chunk };
+          return updated;
         });
       });
 
-      // Finalise assistant message
       setMessages((prev) => {
-        const u = [...prev];
-        u[u.length - 1] = {
-          role: "assistant",
-          content: result.text,
-          sources: result.sources,
+        const updated              = [...prev];
+        updated[updated.length - 1] = {
+          role:      "assistant",
+          content:   result.text,
+          sources:   result.sources,
           followUps: result.followUps,
         };
-        return u;
+        return updated;
       });
       setSources(result.sources);
       setFollowUps(result.followUps);
 
-      // After first ask: store conv ID + notify sidebar
+      // Store conv ID so all future queries in this session use follow_up.
       if (isFirst && result.conversationId) {
         setConversationId(result.conversationId);
         onCreated({
-          id: result.conversationId,
-          title: trimmed.slice(0, 80),
-          slug: "",
+          id:        result.conversationId,
+          title:     trimmed.slice(0, 80),
+          slug:      "",
           createdAt: new Date().toISOString(),
         });
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
-      setMessages((prev) => prev.slice(0, -2)); // remove optimistic pair
+      setMessages((prev) => prev.slice(0, -2)); // roll back optimistic pair
     } finally {
       setStreaming(false);
     }
-  };
+  }, [conversationId, streaming, onCreated]);
 
   // ── Empty state ──
   if (messages.length === 0) {
@@ -528,87 +658,67 @@ function NewThreadPanel({ onCreated }: { onCreated: (conv: Conversation) => void
 }
 
 // ─── Conversation Panel ───────────────────────────────────────────────────────
-// Shown when clicking an existing thread. Loads history from the server, then
-// handles follow-up messages via /purplexity/follow_up.
-
-// ── Stored content parser ─────────────────────────────────────────────────────
-// /purplexity_ask uses Output.object so the DB stores raw JSON like:
-//   {"answer":"The actual text…","followUps":["Q1?","Q2?","Q3?"]}
-// /purplexity/follow_up stores plain text.
-// This helper handles both cases transparently.
-function parseStoredContent(
-  role: string,
-  raw: string
-): { content: string; followUps: string[]; sources: Source[] } {
-  if (role.toLowerCase() !== "assistant") {
-    return { content: raw, followUps: [], sources: [] };
-  }
-  try {
-    const cleaned = raw.replace(/```json\n?|```/g, "").trim();
-    const obj = JSON.parse(cleaned);
-    return {
-      content:   typeof obj.answer    === "string" ? obj.answer                : raw,
-      followUps: Array.isArray(obj.followUps)      ? obj.followUps.slice(0, 3) : [],
-      sources:   Array.isArray(obj.sources)         ? obj.sources               : [],
-    };
-  } catch {
-    return { content: raw, followUps: [], sources: [] }; // plain text — use as-is
-  }
-}
+// Loads an existing thread from the server, then handles follow-ups.
 
 function ConversationPanel({ conversation }: { conversation: Conversation }) {
-  const [messages, setMessages]   = useState<Message[]>([]);
-  const [query, setQuery]         = useState("");
-  const [streaming, setStreaming] = useState(false);
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState<string | null>(null);
-  const [sources, setSources]     = useState<Source[]>([]);
-  const [followUps, setFollowUps] = useState<string[]>([]);
-  
-  
-  // Load full message history when the panel mounts or conversation changes
+  const [messages, setMessages]         = useState<Message[]>([]);
+  const [query, setQuery]               = useState("");
+  const [streaming, setStreaming]       = useState(false);
+  const [loading, setLoading]           = useState(true);
+  const [error, setError]               = useState<string | null>(null);
+  const [sources, setSources]           = useState<Source[]>([]);
+  const [followUps, setFollowUps]       = useState<string[]>([]);
+  const [historical, setHistorical]     = useState(false);
+  // Incrementing this triggers the useEffect to re-fetch without changing conversation.id
+  const [retryCount, setRetryCount]     = useState(0);
+
   useEffect(() => {
     let cancelled = false;
 
-    // Reset all state for the incoming conversation
+    // Reset everything for the incoming conversation.
     setLoading(true);
     setMessages([]);
     setSources([]);
     setFollowUps([]);
-    setError(null);   // ← clears stale errors from previous threads
+    setError(null);
     setQuery("");
+    setHistorical(false);
 
     (async () => {
       try {
         const token = await getToken();
         const res   = await fetch(`${API}/conversation/${conversation.id}`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers:     { Authorization: `Bearer ${token}` },
           credentials: "include",
         });
         if (!res.ok) throw new Error(`Server returned ${res.status}`);
-        const data = await res.json();
+        const data = await res.json() as { conversation?: { messages?: { role: string; content: string }[] } };
         if (cancelled) return;
 
-        // DB stores role as "User" / "Assistant" — normalise + parse content + sources
-        const mapped: Message[] = (data.conversation?.messages ?? []).map(
-          (m: { role: string; content: string }) => {
-            const { content, followUps, sources } = parseStoredContent(m.role, m.content);
-            return {
-              role: m.role.toLowerCase() as "user" | "assistant",
-              content,
-              sources,
-              followUps,
-            };
-          }
-        );
-        console.log(`Previous conversations Mapped ${mapped.map((msg , i)=>{console.log(`msg ${msg.sources}`)})}`)
+        // Parse every DB message through the envelope decoder.
+        const mapped: Message[] = (data.conversation?.messages ?? []).map((m) => {
+          const { content, followUps, sources, sourcesUnavailable } =
+            parseStoredContent(m.role, m.content);
+          return {
+            role:   m.role.toLowerCase() as "user" | "assistant",
+            content,
+            sources,
+            followUps,
+            sourcesUnavailable,
+          };
+        });
+
         setMessages(mapped);
 
-        // Pre-populate the source bar with sources from the last assistant message
-        // so the right panel isn't empty when revisiting a thread.
-        const lastAssistant = [...mapped].reverse().find((m) => m.role === "assistant");
-        if (lastAssistant?.sources?.length) {
-          setSources(lastAssistant.sources);
+        // Pre-populate the source bar from the most recent assistant message that
+        // has sources. Pre-fix messages (sourcesUnavailable=true) are skipped.
+        const lastWithSources = [...mapped]
+          .reverse()
+          .find((m) => m.role === "assistant" && m.sources && m.sources.length > 0);
+
+        if (lastWithSources?.sources?.length) {
+          setSources(lastWithSources.sources);
+          setHistorical(true);
         }
       } catch (e) {
         if (!cancelled) {
@@ -620,19 +730,21 @@ function ConversationPanel({ conversation }: { conversation: Conversation }) {
     })();
 
     return () => { cancelled = true; };
-  }, [conversation.id]);
+  }, [conversation.id, retryCount]); // retryCount re-triggers the fetch on retry
 
-  const sendQuery = async (text: string) => {
+  const sendQuery = useCallback(async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || streaming) return;
+
     setQuery("");
     setError(null);
     setFollowUps([]);
     setSources([]);
+    setHistorical(false); // live stream — clear the "prev" badge
 
     setMessages((prev) => [
       ...prev,
-      { role: "user", content: trimmed },
+      { role: "user",      content: trimmed },
       { role: "assistant", content: "", sources: [] },
     ]);
     setStreaming(true);
@@ -646,22 +758,22 @@ function ConversationPanel({ conversation }: { conversation: Conversation }) {
         "\n<SOURCES>\n",
         (chunk) => {
           setMessages((prev) => {
-            const u = [...prev];
-            u[u.length - 1] = { ...u[u.length - 1], content: chunk };
-            return u;
+            const updated              = [...prev];
+            updated[updated.length - 1] = { ...updated[updated.length - 1], content: chunk };
+            return updated;
           });
-        }
+        },
       );
 
       setMessages((prev) => {
-        const u = [...prev];
-        u[u.length - 1] = {
-          role: "assistant",
-          content: result.text,
-          sources: result.sources,
+        const updated              = [...prev];
+        updated[updated.length - 1] = {
+          role:      "assistant",
+          content:   result.text,
+          sources:   result.sources,
           followUps: result.followUps,
         };
-        return u;
+        return updated;
       });
       setSources(result.sources);
       setFollowUps(result.followUps);
@@ -671,47 +783,12 @@ function ConversationPanel({ conversation }: { conversation: Conversation }) {
     } finally {
       setStreaming(false);
     }
-  };
+  }, [conversation.id, streaming]);
 
   if (loading) {
-    return (
-      <div className="flex h-full overflow-hidden">
-        <div className="flex-1 flex flex-col min-w-0">
-          <div className="h-12 px-6 border-b border-zinc-800/40 flex items-center shrink-0">
-            <p className="text-zinc-400 text-[12px] truncate">{conversation.title}</p>
-          </div>
-          {/* Shimmer skeleton — mirrors the real message layout */}
-          <div className="flex-1 overflow-y-auto thin-scroll">
-            <div className="max-w-2xl mx-auto px-6 py-8 space-y-10">
-              <div className="space-y-3">
-                <div className="flex gap-1.5">
-                  {[80, 120, 96].map((w, i) => (
-                    <div key={i} className="h-6 rounded-lg shimmer" style={{ width: w }} />
-                  ))}
-                </div>
-                <div className="space-y-2">
-                  {[100, 85, 95, 70].map((pct, i) => (
-                    <div key={i} className="h-3.5 rounded shimmer" style={{ width: `${pct}%` }} />
-                  ))}
-                </div>
-              </div>
-              <div className="flex justify-end">
-                <div className="h-10 w-48 rounded-2xl shimmer" />
-              </div>
-              <div className="space-y-2">
-                {[100, 88, 76, 55].map((pct, i) => (
-                  <div key={i} className="h-3.5 rounded shimmer" style={{ width: `${pct}%` }} />
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-        <SourceBar sources={[]} streaming={false} />
-      </div>
-    );
+    return <ConversationSkeleton title={conversation.title} />;
   }
 
-  // Fetch failed — show inline error
   if (error && messages.length === 0) {
     return (
       <div className="flex flex-col h-full">
@@ -722,7 +799,11 @@ function ConversationPanel({ conversation }: { conversation: Conversation }) {
           <div className="text-center space-y-3">
             <p className="text-zinc-500 text-[13px]">{error}</p>
             <button
-              onClick={() => { setError(null); setLoading(true); }}
+              onClick={() => {
+                setError(null);
+                // Incrementing retryCount re-triggers the useEffect to re-fetch.
+                setRetryCount((c) => c + 1);
+              }}
               className="text-[12px] text-violet-400 hover:text-violet-300 transition-colors underline underline-offset-2"
             >
               Try again
@@ -742,6 +823,7 @@ function ConversationPanel({ conversation }: { conversation: Conversation }) {
       error={error}
       sources={sources}
       followUps={followUps}
+      historical={historical}
       onQuery={sendQuery}
       onChangeQuery={setQuery}
     />
@@ -758,55 +840,63 @@ export default function ChatPage() {
   const [sidebarOpen, setSidebarOpen]     = useState(true);
   const router = useRouter();
 
-  // Fetch sidebar conversation list
+  // Fetch sidebar list — also acts as the auth gate.
   useEffect(() => {
+    let cancelled = false;
+
     (async () => {
       try {
         const token = await getToken();
-        console.log(`token ${token}`)
         const res   = await fetch(`${API}/conversation`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers:     { Authorization: `Bearer ${token}` },
           credentials: "include",
         });
-        console.log(`res :${res.json}`)
-        if (!res.ok) throw new Error(`${res.status}`);
-        const data = await res.json();
-        console.log(` data from server :${data.conversation}`)
-        setConversations(data.conversations ?? []);
+
+        if (!res.ok) {
+          // 401 → not logged in; anything else → unexpected but still redirect.
+          router.push("/");
+          return;
+        }
+
+        const data = await res.json() as { conversations?: Conversation[] };
+        if (!cancelled) setConversations(data.conversations ?? []);
       } catch {
-        // Not authenticated — redirect to login
+        // getToken() threw — no session at all.
         router.push("/");
       } finally {
-        setLoadingConvs(false);
+        if (!cancelled) setLoadingConvs(false);
       }
     })();
-  }, []);
+
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = useMemo(
     () => conversations.filter((c) =>
-      c.title.toLowerCase().includes(search.toLowerCase())
+      c.title.toLowerCase().includes(search.toLowerCase()),
     ),
-    [conversations, search]
+    [conversations, search],
   );
+  console.log(`filtere :${filtered}`)
 
-  // Add newly created conversation to the top of the sidebar list.
-  // Does NOT switch active — NewThreadPanel manages its own in-session state.
-  const onNewConversation = (conv: Conversation) => {
+  // Prepend the new conversation to the sidebar list after a first ask.
+  const onNewConversation = useCallback((conv: Conversation) => {
     setConversations((prev) => [conv, ...prev]);
-  };
+  }, []);
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[#0f0f10]" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+    <div
+      className="flex h-screen w-full overflow-hidden bg-[#0f0f10]"
+      style={{ fontFamily: "'DM Sans', sans-serif" }}
+    >
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap');
 
-        /* Scrollbar */
         .thin-scroll::-webkit-scrollbar{width:4px}
         .thin-scroll::-webkit-scrollbar-track{background:transparent}
         .thin-scroll::-webkit-scrollbar-thumb{background:#27272a;border-radius:99px}
         .thin-scroll::-webkit-scrollbar-thumb:hover{background:#3f3f46}
 
-        /* Animations */
         @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
         .cursor-blink{animation:blink 1s step-end infinite}
 
@@ -816,10 +906,8 @@ export default function ChatPage() {
         @keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
         .shimmer{background:linear-gradient(90deg,#1a1a1c 25%,#222224 50%,#1a1a1c 75%);background-size:200% 100%;animation:shimmer 1.6s ease infinite}
 
-        /* Chip hover */
         .chip-hover:hover{background:#1e1e20!important;border-color:#3f3f46!important}
 
-        /* Prose (AI answer) */
         .prose-answer p{margin-bottom:.75rem;line-height:1.75}
         .prose-answer p:last-child{margin-bottom:0}
         .prose-answer strong{color:#e4e4e7;font-weight:600}
@@ -827,8 +915,7 @@ export default function ChatPage() {
         .prose-answer code{background:#111112;border:1px solid #27272a;border-radius:4px;padding:1px 6px;font-size:.8em;color:#a78bfa;font-family:ui-monospace,monospace}
         .prose-answer pre{background:#0d0d0e;border:1px solid #27272a;border-radius:10px;padding:14px;margin:10px 0;overflow-x:auto}
         .prose-answer ul,.prose-answer ol{padding-left:1.4rem;margin-bottom:.75rem;display:flex;flex-direction:column;gap:.3rem}
-        .prose-answer ul{list-style:disc}
-        .prose-answer ol{list-style:decimal}
+        .prose-answer ul{list-style:disc}.prose-answer ol{list-style:decimal}
         .prose-answer li{color:#a1a1aa;line-height:1.65}
         .prose-answer h1,.prose-answer h2{font-size:1rem;font-weight:600;color:#e4e4e7;margin:1.25rem 0 .5rem;padding-bottom:.3rem;border-bottom:1px solid #27272a}
         .prose-answer h3{font-size:.93rem;font-weight:600;color:#d4d4d8;margin:1rem 0 .35rem}
@@ -841,22 +928,25 @@ export default function ChatPage() {
         .prose-answer td{color:#a1a1aa}
       `}</style>
 
-      {/* ── Sidebar toggle ── */}
+      {/* Sidebar toggle */}
       <button
         onClick={() => setSidebarOpen((v) => !v)}
-        className={cn("fixed top-6.5 left-5.5 z-50 w-8 h-8 rounded-lg flex items-center justify-center text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.06] transition-all", sidebarOpen?"translate-x-[220px]" : "-translate-x-1")}
+        className="fixed top-3.5 left-3.5 z-50 w-8 h-8 rounded-lg flex items-center justify-center text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.06] transition-all"
         title={sidebarOpen ? "Close sidebar" : "Open sidebar"}
       >
         {sidebarOpen ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
       </button>
 
-      {/* ── Sidebar ── */}
+      {/* Sidebar */}
       <aside className={cn(
         "fixed inset-y-0 left-0 z-40 w-[240px] flex flex-col bg-[#0c0c0d] border-r border-zinc-800/50 transition-transform duration-300",
         sidebarOpen ? "translate-x-0" : "-translate-x-full",
       )}>
         {/* Logo */}
         <div className="h-14 px-4 flex items-center gap-2.5 shrink-0">
+          <div className="w-6 h-6 rounded-md bg-violet-600 flex items-center justify-center">
+            <Zap size={12} className="text-white" />
+          </div>
           <span className="text-white text-[13px] font-semibold tracking-tight">Purplexity</span>
         </div>
 
@@ -892,13 +982,13 @@ export default function ChatPage() {
           </p>
         </div>
 
-        /*
-        show skeleton structured 
-        */
+        {/* Thread list */}
         <div className="flex-1 overflow-y-auto px-2 pb-4 thin-scroll space-y-0.5">
           {loadingConvs ? (
             <div className="space-y-1.5 px-1 pt-1">
-              {[...Array(6)].map((_, i) => <div key={i} className="h-8 rounded-lg shimmer" />)}
+              {Array.from({ length: 6 }, (_, i) => (
+                <div key={i} className="h-8 rounded-lg shimmer" />
+              ))}
             </div>
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-24 gap-2">
@@ -919,14 +1009,17 @@ export default function ChatPage() {
               >
                 <MessageSquare size={12} className="shrink-0 opacity-50" />
                 <p className="text-[12px] truncate flex-1 leading-tight">{conv.title}</p>
-                 <MoreHorizontal size={14}  onClick={(e)=> e.stopPropagation()} />
-              </button> 
+                <MoreHorizontal
+                  size={14}
+                  className="shrink-0 opacity-0 group-hover:opacity-60 transition-opacity"
+                />
+              </button>
             ))
           )}
         </div>
       </aside>
 
-      {/* ── Main ── */}
+      {/* Main */}
       <main className={cn(
         "flex-1 flex flex-col h-full min-w-0 transition-all duration-300",
         sidebarOpen ? "ml-[240px]" : "ml-0",

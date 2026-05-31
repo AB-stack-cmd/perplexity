@@ -24,6 +24,7 @@ const tavilyClient = tavily({ apiKey: process.env.TAVILY_API_KEY! });
 
 const app = express();
 const PORT = process.env.PORT ?? 8080;
+console.log(PORT)
 
 app.use(express.json());
 app.use(
@@ -114,6 +115,7 @@ app.get("/conversation", Validation, async (req: Request, res: Response) => {
       select: { id: true, title: true, slug: true, createdAt: true },
     });
 
+   
     res.status(200).json({ conversations });
   } catch (error) {
     serverError(res, error);
@@ -129,12 +131,15 @@ app.get(
   Validation,
   async (req: Request, res: Response) => {
     const { conversationId } = req.params;
+     const msg = await prisma.message.findFirst({where :{} , include :{conversation : true}})
+      console.log(`db Message content :${msg}`)
 
     try {
       const conversation = await prisma.conversation.findFirst({
         where: { id: conversationId, userId: req.dbUserId },
         include: { messages: { orderBy: { createdAt: "asc" } } },
       });
+      console.log(`conversation : ${conversation?.userId}`)
 
       if (!conversation) {
         return res
@@ -229,13 +234,14 @@ app.post(
       // Persist after stream ends so the client isn't blocked.
       // buildStoredContent embeds sources into the JSON envelope so history
       // can restore them without a separate DB column or API call.
-      await prisma.message.create({
+      const message = await prisma.message.create({
         data: {
           content: buildStoredContent(assistantText, webResults),
           role: "Assistant",
           conversationId: conversation.id,
         },
       });
+      
     } catch (error) {
       if (res.headersSent) { res.end(); return; }
       serverError(res, error);
@@ -291,15 +297,15 @@ app.post(
         .join("\n");
 
       const prompt = `
-Conversation History:
-${history}
+            Conversation History:
+            ${history}
 
-Web Results:
-${JSON.stringify(webResults)}
+            Web Results:
+            ${JSON.stringify(webResults)}
 
-User Follow-up:
-${query}
-      `.trim();
+            User Follow-up:
+            ${query}
+                  `.trim();
 
       const { textStream } = streamText({
         model: google("gemini-2.5-flash"),
