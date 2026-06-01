@@ -766,7 +766,7 @@ function ConversationPanel({ conversation }: { conversation: Conversation }) {
       );
 
       setMessages((prev) => {
-        const updated              = [...prev];
+        const updated = [...prev];
         updated[updated.length - 1] = {
           role:      "assistant",
           content:   result.text,
@@ -1010,6 +1010,8 @@ export default function ChatPage() {
                 <MessageSquare size={12} className="shrink-0 opacity-50" />
                 <p className="text-[12px] truncate flex-1 leading-tight">{conv.title}</p>
                 <MoreHorizontal
+                values="delete"
+                onClick={(e:React.MouseEvent)=>confirm("delete ?")}
                   size={14}
                   className="shrink-0 opacity-0 group-hover:opacity-60 transition-opacity"
                 />
