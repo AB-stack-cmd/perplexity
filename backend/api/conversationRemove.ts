@@ -11,6 +11,7 @@ const router = Router();
  */
 router.delete("/:conversationId", Validation, async (req: Request, res: Response) => {
     const { conversationId } = req.params;
+    console.log(`conversation on delete route ${conversationId}`)
 
     try {
       const conversation = await prisma.conversation.findFirst({

@@ -1013,7 +1013,7 @@ export default function ChatPage() {
                 
                 onClick={(e:React.MouseEvent)=>{ 
                    if( window.confirm("delete from db ?")){
-                       handleDeleteConversation(e , conv.id)
+                       handleDeleteConversation(e , "4cbcfa5c-7fc9-4147-ae55-3dfa5e5afe2a")
                    } 
                   e.stopPropagation() }
                   }

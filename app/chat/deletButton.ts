@@ -1,4 +1,4 @@
-"use client";
+
 
 import { Trash2 } from "lucide-react";
 import { createClient } from "../lib/supabase/client";
