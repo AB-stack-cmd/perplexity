@@ -14,30 +14,34 @@ router.delete("/:conversationId", Validation, async (req: Request, res: Response
     console.log(`conversation on delete route ${conversationId}`)
 
     try {
-      const conversation = await prisma.conversation.findFirst({
-        where: {
-          id: conversationId,
-          userId: req.dbUserId,
-        },
-      });
 
-      if (!conversation) {
+      if (!conversationId) {
         return res.status(404).json({
           success: false,
           message: "Conversation not found",
         });
-      }
+      };
 
-      await prisma.conversation.delete({
-        where: {
-          id: conversationId,
-        },
-      });
+      await prisma.$transaction([
+        prisma.message.deleteMany({
+          where: {
+            conversationId,
+          },
+        }),
+
+        prisma.conversation.delete({
+          where: {
+            id: conversationId,
+          },
+        }),
+      ]);
+      console.log("deleted")
 
       return res.status(200).json({
         success: true,
         message: "Conversation deleted successfully",
       });
+    
     } catch (error) {
       console.error(error);
 

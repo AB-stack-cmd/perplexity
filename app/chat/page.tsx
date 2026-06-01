@@ -69,6 +69,7 @@ async function streamQuery(
     credentials: "include",
     body:    JSON.stringify(body),
   });
+  
 
   if (!res.ok) throw new Error(`Server error ${res.status}`);
   if (!res.body) throw new Error("Response body is empty");
@@ -94,6 +95,7 @@ async function streamQuery(
         answerText   = buffer.split(delimiter)[0];
         sourcesFound = true;
         onChunk(answerText);   // final UI update before sources render
+       console.log(onChunk)
       } else {
         // Still streaming answer text — update the UI on every chunk.
         answerText = buffer;
@@ -633,7 +635,7 @@ function NewThreadPanel({ onCreated }: { onCreated: (conv: Conversation) => void
             onChange={setQuery}
             onSubmit={() => handleQuery(query)}
             streaming={streaming}
-            placeholder="Ask anything…"
+            placeholder="Ask anything… "
             autoFocus
             className="shadow-xl shadow-black/30"
           />
@@ -838,6 +840,7 @@ export default function ChatPage() {
   const [search, setSearch]               = useState("");
   const [active, setActive]               = useState<Conversation | null>(null);
   const [sidebarOpen, setSidebarOpen]     = useState(true);
+  const [showBar ,setBar]     = useState(true) 
   const router = useRouter();
 
   // Fetch sidebar list — also acts as the auth gate.
@@ -944,8 +947,8 @@ export default function ChatPage() {
       )}>
         {/* Logo */}
         <div className="h-14 px-4 flex items-center gap-2.5 shrink-0">
-          <div className="w-6 h-6 rounded-md bg-violet-600 flex items-center justify-center">
-            <Zap size={12} className="text-white" />
+          <div className="w-6 h-6 rounded-md flex items-center justify-center">
+           
           </div>
           <span className="text-white text-[13px] font-semibold tracking-tight">Purplexity</span>
         </div>
@@ -1013,7 +1016,7 @@ export default function ChatPage() {
                 
                 onClick={(e:React.MouseEvent)=>{ 
                    if( window.confirm("delete from db ?")){
-                       handleDeleteConversation(e , "4cbcfa5c-7fc9-4147-ae55-3dfa5e5afe2a")
+                       handleDeleteConversation(e , conv.id)
                    } 
                   e.stopPropagation() }
                   }
@@ -1032,8 +1035,7 @@ export default function ChatPage() {
         "flex-1 flex flex-col h-full min-w-0 transition-all duration-300",
         sidebarOpen ? "ml-[240px]" : "ml-0",
       )}>
-        {active
-          ? <ConversationPanel key={active.id} conversation={active} />
+        {active?<ConversationPanel key={active.id} conversation={active} />
           : <NewThreadPanel onCreated={onNewConversation} />
         }
       </main>
