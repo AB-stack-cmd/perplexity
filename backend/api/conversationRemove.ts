@@ -9,10 +9,7 @@ const router = Router();
 /**
  * DELETE /conversation/:conversationId
  */
-router.delete(
-  "/:conversationId",
-  Validation,
-  async (req: Request, res: Response) => {
+router.delete("/:conversationId", Validation, async (req: Request, res: Response) => {
     const { conversationId } = req.params;
 
     try {

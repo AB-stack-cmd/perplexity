@@ -9,7 +9,7 @@ import {
 import { cn } from "@/lib/utils";
 import { createClient } from "../lib/supabase/client";
 import { useRouter } from "next/navigation";
-
+import { handleDeleteConversation } from "./deletButton";
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 const supabase = createClient();
@@ -1010,8 +1010,14 @@ export default function ChatPage() {
                 <MessageSquare size={12} className="shrink-0 opacity-50" />
                 <p className="text-[12px] truncate flex-1 leading-tight">{conv.title}</p>
                 <MoreHorizontal
-                values="delete"
-                onClick={(e:React.MouseEvent)=>confirm("delete ?")}
+                
+                onClick={(e:React.MouseEvent)=>{ 
+                   if( window.confirm("delete from db ?")){
+                       handleDeleteConversation(e , conv.id)
+                   } 
+                  e.stopPropagation() }
+                  }
+
                   size={14}
                   className="shrink-0 opacity-0 group-hover:opacity-60 transition-opacity"
                 />
