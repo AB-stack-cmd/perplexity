@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { useRouter } from "next/navigation"; // remove if using react-router
 import { createClient } from "./lib/supabase/client";
+import { Condiment } from "next/font/google";
 // ── env vars (Next.js style) ──────────────────────────────────────────────────
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -239,6 +240,7 @@ export default function LandingPage() {
     });
 
     const { data: { subscription } } = sb.auth.onAuthStateChange((_e, session) => {
+      console.log(`subscription ${subscription.callback}`)
       if (session?.user) {
         setUser(session.user);
         // router.push("/chat");
